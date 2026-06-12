@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1a1f35">
+<link rel="manifest" href="manifest.json">
+<title>Game Release Tracker</title>
+<style>
+  body { margin:0; font-family:'Segoe UI',sans-serif; background:#1a1f35; color:#e4e9f7; }
+  header { background:#252b42; padding:16px; text-align:center; font-size:1.2em; font-weight:bold; position:sticky; top:0; }
+  .tabs { display:flex; background:#252b42; padding:6px 12px; gap:8px; }
+  .tabs button { flex:1; padding:10px; border:0; border-radius:4px; font-weight:bold; cursor:pointer; background:#2d3454; color:#fff; }
+  .tabs button.active { background:#4a90e2; }
+  .game { background:#2d3454; margin:8px 12px; padding:12px 14px; border-radius:6px; }
+  .game.hyped { background:#3d3416; border:2px solid #f39c12; }
+  .name { font-size:1.05em; font-weight:bold; }
+  .game.hyped .name { color:#f1c40f; }
+  .platforms { font-size:0.78em; color:#95a5a6; margin-top:4px; }
+  .days { font-size:0.85em; font-weight:bold; margin-top:5px; }
+  .footer { text-align:center; color:#5a6478; font-size:0.75em; padding:16px; }
+</style>
+</head>
+<body>
+<header>🎮 Meine Hype Games</header>
+<div class="tabs">
+  <button id="tab0" class="active" onclick="show(0)">📅 Mit Datum</button>
+  <button id="tab1" onclick="show(1)">📭 Ohne Datum</button>
+</div>
+<div id="list"></div>
+<div class="footer" id="footer"></div>
+<script>
+const GIST_RAW_URL = "https://gist.githubusercontent.com/DEIN_USER/DEINE_GIST_ID/raw/games.json";
+let games = [], page = 0;
+
+function parseDate(s) {
+  if (!s) return null;
+  let m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (m) return new Date(`${m[3]}-${m[2]}-${m[1]}`);
+  return new Date(s);
+}
+function daysUntil(d) {
+  return Math.floor((parseDate(d) - new Date()) / 86400000);
+}
+function show(p) {
+  page = p;
+  document.getElementById('tab0').classList.toggle('active', p === 0);
+  document.getElementById('tab1').classList.toggle('active', p === 1);
+  render();
+}
+function render() {
+  const isTba = g => g.manual_tba || (!g.release_date && !g.release_window);
+  let list = games.filter(g => (page === 1) === isTba(g));
+  list.sort((a, b) => {
+    const da = parseDate(a.release_date || a.last_known_date) || new Date('9999-12-31');
+    const db = parseDate(b.release_date || b.last_known_date) || new Date('9999-12-31');
+    return da - db;
+  });
+  document.getElementById('list').innerHTML = list.map(g => {
+    const name = g.display_name || g.name;
+    let info = '📅 Datum unbekannt', color = '#7f8c8d';
+    if (page === 0 && g.release_date) {
+      const d = daysUntil(g.release_date);
+      if (d < 0)      { info = `⏰ Erschienen vor ${-d} Tagen`; color = '#95a5a6'; }
+      else if (d === 0){ info = '🎉 RELEASE HEUTE!'; color = '#2ecc71'; }
+      else if (d < 7)  { info = `🔥 Noch ${d} Tage!`; color = '#e74c3c'; }
+      else if (d < 30) { info = `⏳ Noch ${d} Tage`; color = '#f39c12'; }
+      else             { info = `📅 Noch ${d} Tage`; color = '#3498db'; }
+      info += ` • ${g.release_date}`;
+    } else if (page === 0 && g.release_window) {
+      info = `~ ${g.release_window}`; color = '#3498db';
+    } else if (g.last_known_date) {
+      info = `Platzhalter: ${g.last_known_date}`;
+    }
+    return `<div class="game ${g.hyped ? 'hyped' : ''}">
+      <div class="name">${g.hyped ? '⭐ ' : ''}${name}</div>
+      ${g.platforms ? `<div class="platforms">🎯 ${g.platforms}</div>` : ''}
+      <div class="days" style="color:${color}">${info}</div>
+    </div>`;
+  }).join('') || '<div class="footer">Keine Spiele</div>';
+}
+fetch(GIST_RAW_URL + '?t=' + Date.now())   // Cache-Buster
+  .then(r => r.json())
+  .then(data => {
+    games = data;
+    localStorage.setItem('games', JSON.stringify(data));
+    document.getElementById('footer').textContent = 'Stand: ' + new Date().toLocaleString('de-DE');
+    render();
+  })
+  .catch(() => {   // Offline: letzte bekannte Liste anzeigen
+    games = JSON.parse(localStorage.getItem('games') || '[]');
+    document.getElementById('footer').textContent = '⚠️ Offline – letzter bekannter Stand';
+    render();
+  });
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>
