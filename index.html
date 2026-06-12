@@ -93,6 +93,31 @@ fetch(GIST_RAW_URL + '?t=' + Date.now())   // Cache-Buster
     render();
   });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+// ===== SWIPE-NAVIGATION ZWISCHEN TABS =====
+let touchStartX = 0;
+let touchStartY = 0;
+
+document.addEventListener('touchstart', e => {
+  touchStartX = e.changedTouches[0].screenX;
+  touchStartY = e.changedTouches[0].screenY;
+}, { passive: true });
+
+document.addEventListener('touchend', e => {
+  const deltaX = e.changedTouches[0].screenX - touchStartX;
+  const deltaY = e.changedTouches[0].screenY - touchStartY;
+
+  // Nur als Swipe werten, wenn:
+  // - horizontal mindestens 60px bewegt wurde
+  // - die horizontale Bewegung deutlich größer ist als die vertikale
+  //   (sonst feuert es beim normalen Scrollen!)
+  if (Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+    if (deltaX < 0 && page === 0) {
+      show(1);   // Swipe nach links -> "Ohne Datum"
+    } else if (deltaX > 0 && page === 1) {
+      show(0);   // Swipe nach rechts -> "Mit Datum"
+    }
+  }
+}, { passive: true });
 </script>
 </body>
 </html>
