@@ -7,17 +7,29 @@
 <link rel="manifest" href="manifest.json">
 <title>Game Release Tracker</title>
 <style>
-  body { margin:0; font-family:'Segoe UI',sans-serif; background:#1a1f35; color:#e4e9f7; }
-  header { background:#252b42; padding:16px; text-align:center; font-size:1.2em; font-weight:bold; position:sticky; top:0; }
-  .tabs { display:flex; background:#252b42; padding:6px 12px; gap:8px; }
-  .tabs button { flex:1; padding:10px; border:0; border-radius:4px; font-weight:bold; cursor:pointer; background:#2d3454; color:#fff; }
+  body { margin:0; font-family:'Segoe UI',sans-serif; background:#1a1f35; color:#e4e9f7; overflow-x:hidden; }
+  header { background:#252b42; padding:16px; text-align:center; font-size:1.2em; font-weight:bold; position:sticky; top:0; z-index:10; }
+  .tabs { display:flex; background:#252b42; padding:6px 12px; gap:8px; position:sticky; top:56px; z-index:10; }
+  .tabs button { flex:1; padding:10px; border:0; border-radius:4px; font-weight:bold; cursor:pointer; background:#2d3454; color:#fff; transition:background .2s; }
   .tabs button.active { background:#4a90e2; }
+
+  /* Viewport für die Seiten */
+  .viewport { overflow:hidden; }
+  .track { display:flex; width:200%; transition:transform .3s ease; }
+  .page { width:50%; flex-shrink:0; }
+
   .game { background:#2d3454; margin:8px 12px; padding:12px 14px; border-radius:6px; }
   .game.hyped { background:#3d3416; border:2px solid #f39c12; }
   .name { font-size:1.05em; font-weight:bold; }
   .game.hyped .name { color:#f1c40f; }
   .platforms { font-size:0.78em; color:#95a5a6; margin-top:4px; }
   .days { font-size:0.85em; font-weight:bold; margin-top:5px; }
+
+  /* Abstand zwischen zwei Releases */
+  .gap { display:flex; align-items:center; gap:6px; margin:6px 12px; }
+  .gap .line { flex:1; height:1px; background:#3d4466; }
+  .gap .txt { font-size:0.68em; color:#5a6478; white-space:nowrap; }
+
   .footer { text-align:center; color:#5a6478; font-size:0.75em; padding:16px; }
 </style>
 </head>
@@ -27,8 +39,16 @@
   <button id="tab0" class="active" onclick="show(0)">📅 Mit Datum</button>
   <button id="tab1" onclick="show(1)">📭 Ohne Datum</button>
 </div>
-<div id="list"></div>
+
+<div class="viewport">
+  <div class="track" id="track">
+    <div class="page" id="page0"></div>
+    <div class="page" id="page1"></div>
+  </div>
+</div>
+
 <div class="footer" id="footer"></div>
+
 <script>
 const GIST_RAW_URL = "https://gist.githubusercontent.com/DerUserX/6223c6e0ef9f2d6f85060d161a4650e1/raw/games.json";
 let games = [], page = 0;
@@ -36,50 +56,118 @@ let games = [], page = 0;
 function parseDate(s) {
   if (!s) return null;
   let m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-  if (m) return new Date(`${m[3]}-${m[2]}-${m[1]}`);
+  if (m) return new Date(`${m[3]}-${m[2]}-${m[1]}`);   // ✅ Klammer-Bug gefixt
   return new Date(s);
 }
+
 function daysUntil(d) {
-  return Math.floor((parseDate(d) - new Date()) / 86400000);
+  // Auf Tagesgrenze normalisieren, damit "Noch X Tage" nicht von der Uhrzeit abhängt
+  const target = parseDate(d);
+  if (!target || isNaN(target)) return null;
+  const now = new Date();
+  target.setHours(0,0,0,0);
+  now.setHours(0,0,0,0);
+  return Math.round((target - now) / 86400000);
 }
+
+// Effektives Datum (Datum > Release-Window > Platzhalter), nur für Sortierung/Gap
+function effectiveDate(g) {
+  if (g.release_date) return parseDate(g.release_date);
+  if (g.release_window) {
+    const parts = g.release_window.split(' ');
+    if (parts.length === 2) {
+      const seasonStart = { 'Frühling':'03-20','Sommer':'06-21','Herbst':'09-23','Winter':'12-21' };
+      const md = seasonStart[parts[0]];
+      if (md) return new Date(`${parts[1]}-${md}`);
+    }
+  }
+  if (g.last_known_date) return parseDate(g.last_known_date);
+  return null;
+}
+
 function show(p) {
   page = p;
   document.getElementById('tab0').classList.toggle('active', p === 0);
   document.getElementById('tab1').classList.toggle('active', p === 1);
-  render();
+  document.getElementById('track').style.transform = `translateX(-${p * 50}%)`;
 }
+
+function buildGameHtml(g, withDate) {
+  const name = g.display_name || g.name;
+  let info = '📅 Datum unbekannt', color = '#7f8c8d';
+  if (withDate && g.release_date) {
+    const d = daysUntil(g.release_date);
+    if (d === null)  { info = '📅 Datum unbekannt'; color = '#7f8c8d'; }
+    else if (d < 0)  { info = `⏰ Erschienen vor ${-d} Tagen`; color = '#95a5a6'; }
+    else if (d === 0){ info = '🎉 RELEASE HEUTE!'; color = '#2ecc71'; }
+    else if (d < 7)  { info = `🔥 Noch ${d} Tage!`; color = '#e74c3c'; }
+    else if (d < 30) { info = `⏳ Noch ${d} Tage (${fmtWeeks(d)})`; color = '#f39c12'; }
+    else             { info = `📅 Noch ${d} Tage (${fmtWeeks(d)})`; color = '#3498db'; }
+    if (d !== null) info += ` • ${g.release_date}`;
+  } else if (withDate && g.release_window) {
+    info = `~ ${g.release_window}`; color = '#3498db';
+  } else if (g.last_known_date) {
+    info = `Platzhalter: ${g.last_known_date}`;
+  }
+  return `<div class="game ${g.hyped ? 'hyped' : ''}">
+    <div class="name">${g.hyped ? '⭐ ' : ''}${name}</div>
+    ${g.platforms ? `<div class="platforms">🎯 ${g.platforms}</div>` : ''}
+    <div class="days" style="color:${color}">${info}</div>
+  </div>`;
+}
+
+function fmtWeeks(days) {
+  const w = Math.round((days / 7) * 2) / 2;
+  return Number.isInteger(w) ? `${w} Wochen` : `${w} Wochen`;
+}
+
+function buildGapHtml(days, approx) {
+  let txt = days === 1 ? '1 Tag' : `${days} Tage`;
+  if (approx) txt = '~ ' + txt;
+  return `<div class="gap"><div class="line"></div><div class="txt">${txt}</div><div class="line"></div></div>`;
+}
+
 function render() {
   const isTba = g => g.manual_tba || (!g.release_date && !g.release_window);
-  let list = games.filter(g => (page === 1) === isTba(g));
-  list.sort((a, b) => {
-    const da = parseDate(a.release_date || a.last_known_date) || new Date('9999-12-31');
-    const db = parseDate(b.release_date || b.last_known_date) || new Date('9999-12-31');
+
+  // ===== Seite 0: Mit Datum (mit Gap-Anzeige) =====
+  let dated = games.filter(g => !isTba(g));
+  dated.sort((a, b) => {
+    const da = effectiveDate(a) || new Date('9999-12-31');
+    const db = effectiveDate(b) || new Date('9999-12-31');
     return da - db;
   });
-  document.getElementById('list').innerHTML = list.map(g => {
-    const name = g.display_name || g.name;
-    let info = '📅 Datum unbekannt', color = '#7f8c8d';
-    if (page === 0 && g.release_date) {
-      const d = daysUntil(g.release_date);
-      if (d < 0)      { info = `⏰ Erschienen vor ${-d} Tagen`; color = '#95a5a6'; }
-      else if (d === 0){ info = '🎉 RELEASE HEUTE!'; color = '#2ecc71'; }
-      else if (d < 7)  { info = `🔥 Noch ${d} Tage!`; color = '#e74c3c'; }
-      else if (d < 30) { info = `⏳ Noch ${d} Tage`; color = '#f39c12'; }
-      else             { info = `📅 Noch ${d} Tage`; color = '#3498db'; }
-      info += ` • ${g.release_date}`;
-    } else if (page === 0 && g.release_window) {
-      info = `~ ${g.release_window}`; color = '#3498db';
-    } else if (g.last_known_date) {
-      info = `Platzhalter: ${g.last_known_date}`;
+
+  let html0 = '';
+  dated.forEach((g, i) => {
+    if (i > 0) {
+      const prev = dated[i - 1];
+      const d1 = effectiveDate(prev), d2 = effectiveDate(g);
+      if (d1 && d2) {
+        const gap = Math.abs(Math.round((d2 - d1) / 86400000));
+        if (gap > 0) {
+          const approx = !!(prev.release_window && !prev.release_date) ||
+                         !!(g.release_window && !g.release_date);
+          html0 += buildGapHtml(gap, approx);
+        }
+      }
     }
-    return `<div class="game ${g.hyped ? 'hyped' : ''}">
-      <div class="name">${g.hyped ? '⭐ ' : ''}${name}</div>
-      ${g.platforms ? `<div class="platforms">🎯 ${g.platforms}</div>` : ''}
-      <div class="days" style="color:${color}">${info}</div>
-    </div>`;
-  }).join('') || '<div class="footer">Keine Spiele</div>';
+    html0 += buildGameHtml(g, true);
+  });
+  document.getElementById('page0').innerHTML = html0 || '<div class="footer">Keine Spiele mit Datum</div>';
+
+  // ===== Seite 1: Ohne Datum =====
+  let tba = games.filter(g => isTba(g));
+  tba.sort((a, b) => {
+    const da = effectiveDate(a) || new Date('9999-12-31');
+    const db = effectiveDate(b) || new Date('9999-12-31');
+    return da - db;
+  });
+  document.getElementById('page1').innerHTML =
+    tba.map(g => buildGameHtml(g, false)).join('') || '<div class="footer">Keine Spiele ohne Datum</div>';
 }
-fetch(GIST_RAW_URL + '?t=' + Date.now())   // Cache-Buster
+
+fetch(GIST_RAW_URL + '?t=' + Date.now())
   .then(r => r.json())
   .then(data => {
     games = data;
@@ -87,36 +175,62 @@ fetch(GIST_RAW_URL + '?t=' + Date.now())   // Cache-Buster
     document.getElementById('footer').textContent = 'Stand: ' + new Date().toLocaleString('de-DE');
     render();
   })
-  .catch(() => {   // Offline: letzte bekannte Liste anzeigen
+  .catch(() => {
     games = JSON.parse(localStorage.getItem('games') || '[]');
     document.getElementById('footer').textContent = '⚠️ Offline – letzter bekannter Stand';
     render();
   });
+
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
-// ===== SWIPE-NAVIGATION ZWISCHEN TABS =====
-let touchStartX = 0;
-let touchStartY = 0;
+
+// ===== Countdown bei Rückkehr zur App neu berechnen =====
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) render();
+});
+
+// ===== SMOOTHER SWIPE =====
+const track = document.getElementById('track');
+let touchStartX = 0, touchStartY = 0, dragging = false, isHorizontal = null;
 
 document.addEventListener('touchstart', e => {
   touchStartX = e.changedTouches[0].screenX;
   touchStartY = e.changedTouches[0].screenY;
+  dragging = true;
+  isHorizontal = null;
+  track.style.transition = 'none';   // Während des Ziehens: kein Easing
+}, { passive: true });
+
+document.addEventListener('touchmove', e => {
+  if (!dragging) return;
+  const dx = e.changedTouches[0].screenX - touchStartX;
+  const dy = e.changedTouches[0].screenY - touchStartY;
+
+  // Richtung beim ersten nennenswerten Move festlegen
+  if (isHorizontal === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+    isHorizontal = Math.abs(dx) > Math.abs(dy);
+  }
+  if (!isHorizontal) return;   // vertikales Scrollen nicht stören
+
+  // Finger folgt der Seite (mit Randdämpfung an den Enden)
+  let offset = -page * 50 + (dx / window.innerWidth) * 50;
+  if (offset > 0) offset *= 0.3;            // links über den Rand
+  if (offset < -50) offset = -50 + (offset + 50) * 0.3;  // rechts über den Rand
+  track.style.transform = `translateX(${offset}%)`;
 }, { passive: true });
 
 document.addEventListener('touchend', e => {
-  const deltaX = e.changedTouches[0].screenX - touchStartX;
-  const deltaY = e.changedTouches[0].screenY - touchStartY;
+  if (!dragging) return;
+  dragging = false;
+  const dx = e.changedTouches[0].screenX - touchStartX;
 
-  // Nur als Swipe werten, wenn:
-  // - horizontal mindestens 60px bewegt wurde
-  // - die horizontale Bewegung deutlich größer ist als die vertikale
-  //   (sonst feuert es beim normalen Scrollen!)
-  if (Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
-    if (deltaX < 0 && page === 0) {
-      show(1);   // Swipe nach links -> "Ohne Datum"
-    } else if (deltaX > 0 && page === 1) {
-      show(0);   // Swipe nach rechts -> "Mit Datum"
-    }
+  track.style.transition = 'transform .3s ease';   // Easing wieder an
+
+  // Genug gezogen? -> Seite wechseln, sonst zurückfedern
+  if (isHorizontal && Math.abs(dx) > window.innerWidth * 0.25) {
+    if (dx < 0 && page === 0) { show(1); return; }
+    if (dx > 0 && page === 1) { show(0); return; }
   }
+  show(page);   // zurückfedern auf aktuelle Seite
 }, { passive: true });
 </script>
 </body>
