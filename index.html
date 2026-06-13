@@ -287,7 +287,7 @@ document.addEventListener('touchend', e => {
   track.style.transition = 'transform .3s ease';   // Easing wieder an
 
   // Genug gezogen? -> Seite wechseln, sonst zurückfedern
-  if (isHorizontal && Math.abs(dx) > window.innerWidth * 0.25) {
+  if (isHorizontal && Math.abs(dx) > window.innerWidth * 0.15) {
     if (dx < 0 && page === 0) { show(1); return; }
     if (dx > 0 && page === 1) { show(0); return; }
   }
