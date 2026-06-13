@@ -34,7 +34,7 @@
 </style>
 </head>
 <body>
-<header>🎮 Meine Hype Games</header>
+<header id="header">🎮 Meine Hype Games</header>
 <div class="tabs">
   <button id="tab0" class="active" onclick="show(0)">📅 Mit Datum</button>
   <button id="tab1" onclick="show(1)">📭 Ohne Datum</button>
@@ -56,7 +56,7 @@ let games = [], page = 0;
 function parseDate(s) {
   if (!s) return null;
   let m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-  if (m) return new Date(`${m[3]}-${m[2]}-${m[1]}`);   // ✅ Klammer-Bug gefixt
+  if (m) return new Date(`${m[3]}-${m[2]}-${m[1]}`);
   return new Date(s);
 }
 
@@ -85,6 +85,59 @@ function effectiveDate(g) {
   return null;
 }
 
+// Plattform-Formatierung (portiert aus der PC-App)
+function formatPlatforms(platformsStr) {
+  if (!platformsStr) return '';
+
+  // In Liste aufteilen
+  let platforms = platformsStr.split(',').map(p => p.trim()).filter(p => p);
+
+  let cleaned = [];
+  for (let p of platforms) {
+    const low = p.toLowerCase();
+    // Xbox komplett entfernen (alle Xbox-Varianten)
+    if (low.includes('xbox')) continue;
+    // PC (Microsoft Windows) -> PC
+    if (low.includes('microsoft windows') || low === 'pc (microsoft windows)') p = 'PC';
+    cleaned.push(p);
+  }
+
+  // Duplikate entfernen, Reihenfolge erhalten
+  let seen = new Set(), unique = [];
+  for (let p of cleaned) {
+    if (!seen.has(p)) { seen.add(p); unique.push(p); }
+  }
+
+  // Wenn "Nintendo Switch 2" vorhanden ist, normales "Nintendo Switch" entfernen
+  const hasSwitch2 = unique.some(p => p.toLowerCase().includes('switch 2'));
+  if (hasSwitch2) {
+    unique = unique.filter(p =>
+      !(p.toLowerCase().endsWith('switch') && !p.toLowerCase().includes('switch 2'))
+    );
+  }
+
+  // Sortier-Priorität: PS5 -> Switch 2 -> PC -> Rest (alphabetisch)
+  function sortKey(name) {
+    const n = name.toLowerCase();
+    if (n.includes('playstation 5')) return 0;
+    if (n.includes('nintendo switch 2') || n.includes('switch 2')) return 1;
+    if (n === 'pc') return 2;
+    return 3;
+  }
+  unique.sort((a, b) => {
+    const ka = sortKey(a), kb = sortKey(b);
+    if (ka !== kb) return ka - kb;
+    return a.localeCompare(b);   // gleiche Priorität -> alphabetisch
+  });
+
+  return unique.join(', ');
+}
+
+function fmtWeeks(days) {
+  const w = Math.round((days / 7) * 2) / 2;
+  return `${w} Wochen`;
+}
+
 function show(p) {
   page = p;
   document.getElementById('tab0').classList.toggle('active', p === 0);
@@ -109,16 +162,12 @@ function buildGameHtml(g, withDate) {
   } else if (g.last_known_date) {
     info = `Platzhalter: ${g.last_known_date}`;
   }
+  const plat = formatPlatforms(g.platforms);
   return `<div class="game ${g.hyped ? 'hyped' : ''}">
     <div class="name">${g.hyped ? '⭐ ' : ''}${name}</div>
-    ${g.platforms ? `<div class="platforms">🎯 ${g.platforms}</div>` : ''}
+    ${plat ? `<div class="platforms">🎯 ${plat}</div>` : ''}
     <div class="days" style="color:${color}">${info}</div>
   </div>`;
-}
-
-function fmtWeeks(days) {
-  const w = Math.round((days / 7) * 2) / 2;
-  return Number.isInteger(w) ? `${w} Wochen` : `${w} Wochen`;
 }
 
 function buildGapHtml(days, approx) {
@@ -127,7 +176,19 @@ function buildGapHtml(days, approx) {
   return `<div class="gap"><div class="line"></div><div class="txt">${txt}</div><div class="line"></div></div>`;
 }
 
+function updateCounts() {
+  const isTba = g => g.manual_tba || (!g.release_date && !g.release_window);
+  const totalCount = games.length;
+  const datedCount = games.filter(g => !isTba(g)).length;
+  const tbaCount = games.filter(g => isTba(g)).length;
+
+  document.getElementById('header').textContent = `🎮 Meine Hype Games (${totalCount})`;
+  document.getElementById('tab0').textContent = `📅 Mit Datum (${datedCount})`;
+  document.getElementById('tab1').textContent = `📭 Ohne Datum (${tbaCount})`;
+}
+
 function render() {
+  updateCounts();
   const isTba = g => g.manual_tba || (!g.release_date && !g.release_window);
 
   // ===== Seite 0: Mit Datum (mit Gap-Anzeige) =====
