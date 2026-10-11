@@ -3,17 +3,34 @@
 Wird einmal gebaut und danach nur ein-/ausgeblendet; die Kartenliste wird nur neu
 aufgebaut, wenn sich die Spieldaten (oder das Tagesdatum) geändert haben.
 """
+import ctypes
 import json
 import time
+import tkinter
 from datetime import date, datetime
 
 import customtkinter as ctk
 
 from ..models import days_between, is_tba, sort_key_dated, sort_key_tba
 from . import theme
-from .widgets import GameCard, GapSeparator, empty_state
+from .widgets import ScrollFrame, GameCard, GapSeparator, empty_state
 
 WIDTH, HEIGHT = 480, 620
+
+
+class _Rect(ctypes.Structure):
+    _fields_ = [('left', ctypes.c_long), ('top', ctypes.c_long), ('right', ctypes.c_long), ('bottom', ctypes.c_long)]
+
+
+def work_area(widget):
+    """Freier Bildschirmbereich des Hauptmonitors ohne Taskleiste (echte Pixel)."""
+    rect = _Rect()
+    try:
+        if ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):  # SPI_GETWORKAREA
+            return rect.left, rect.top, rect.right, rect.bottom
+    except (AttributeError, OSError):
+        pass
+    return 0, 0, widget.winfo_screenwidth(), widget.winfo_screenheight() - 48
 
 
 class Popup(ctk.CTkToplevel):
@@ -47,8 +64,19 @@ class Popup(ctk.CTkToplevel):
         self._had_focus = False
 
     def _position(self):
-        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        self.geometry(f"{WIDTH}x{HEIGHT}+{sw - WIDTH - 12}+{sh - HEIGHT - 56}")
+        """Unten rechts, direkt über der Taskleiste.
+
+        CTk skaliert bei geometry() auch die Position mit der Windows-Anzeigeskalierung –
+        daher nur die Größe über CTk setzen und mit der unskalierten Tk-Methode in echten Pixeln platzieren.
+        """
+        scale = ctk.ScalingTracker.get_window_scaling(self)
+        left, top, right, bottom = work_area(self)
+        margin = int(10 * scale)
+        height = min(HEIGHT, int((bottom - top - 2 * margin) / scale))
+        self.geometry(f"{WIDTH}x{height}")
+        x = right - int(WIDTH * scale) - margin
+        y = bottom - int(height * scale) - margin
+        tkinter.Wm.wm_geometry(self, f"+{x}+{y}")
 
     @property
     def is_open(self):
@@ -89,12 +117,21 @@ class Popup(ctk.CTkToplevel):
                                       font=(theme.EMOJI_FAMILY, 14), fg_color=theme.CARD, hover_color=theme.CARD_HOVER,
                                       command=lambda: self.app.open_notifications(from_popup=True))
         self.bell_btn.pack(padx=3)
-        self.badge = ctk.CTkLabel(bell_wrap, text="", font=theme.font(9, 'bold'), fg_color=theme.DANGER,
+        # Badge liegt IN der Glocke: seine abgerundeten Ecken nehmen so die Glockenfarbe an
+        # (vorher die Farbe der Kopfleiste → dunkles Quadrat hinter dem roten Punkt)
+        self.badge = ctk.CTkLabel(self.bell_btn, text="", font=theme.font(9, 'bold'), fg_color=theme.DANGER,
                                   text_color='white', corner_radius=8, width=18, height=16)
+        self.badge.bind('<Button-1>', lambda e: self.app.open_notifications(from_popup=True))
+        self.bell_btn.bind('<Enter>', lambda e: self._sync_badge(hover=True), add='+')
+        self.bell_btn.bind('<Leave>', lambda e: self._sync_badge(hover=False), add='+')
         close = ctk.CTkButton(btns, text="✕", width=30, height=30, corner_radius=8, font=theme.BODY_BOLD,
                               fg_color='transparent', hover_color=theme.DANGER_DARK, text_color=theme.MUTED,
                               command=self.close)
         close.pack(side='left', padx=(6, 0))
+
+    def _sync_badge(self, hover):
+        color = self.bell_btn.cget('hover_color' if hover else 'fg_color')
+        self.badge.configure(bg_color=color)
 
     def _build_tabs(self):
         bar = ctk.CTkFrame(self.shell, fg_color=theme.SURFACE, corner_radius=0)
@@ -130,8 +167,9 @@ class Popup(ctk.CTkToplevel):
         unread = store.unread_count()
         if unread:
             self.badge.configure(text=str(unread))
-            self.badge.place(relx=1.0, x=-2, y=0, anchor='ne')
+            self.badge.place(relx=1.0, x=-1, y=1, anchor='ne')
             self.bell_btn.configure(fg_color=theme.WARNING, hover_color='#d68c22')
+            self._sync_badge(hover=False)
         else:
             self.badge.place_forget()
             self.bell_btn.configure(fg_color=theme.CARD, hover_color=theme.CARD_HOVER)
@@ -174,7 +212,7 @@ class Popup(ctk.CTkToplevel):
         self.lists[self.page].pack(fill='both', expand=True)
 
     def _build_list(self, games, with_gaps, empty):
-        lst = ctk.CTkScrollableFrame(self.body, fg_color='transparent', scrollbar_button_color=theme.BORDER,
+        lst = ScrollFrame(self.body, fg_color='transparent', scrollbar_button_color=theme.BORDER,
                                      scrollbar_button_hover_color=theme.SUBTLE)
         if not games:
             empty_state(lst, "📭", empty, "Klicke auf ＋ um Spiele hinzuzufügen")

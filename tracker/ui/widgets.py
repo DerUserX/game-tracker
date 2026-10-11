@@ -1,6 +1,9 @@
 """Wiederverwendbare UI-Bausteine."""
 import logging
+import sys
 import tkinter
+import weakref
+import webbrowser
 
 import customtkinter as ctk
 from PIL import Image, ImageDraw, ImageFont
@@ -10,6 +13,63 @@ from ..models import days_until, format_weeks, platform_list, short_platform, ti
 from . import theme
 
 log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------- Scrollen
+class ScrollFrame(ctk.CTkScrollableFrame):
+    """CTkScrollableFrame mit leichterem, weichem Mausrad-Scrollen.
+
+    CTk scrollt unter Windows nur 20 px pro Raste und meldet jede Instanz per bind_all an,
+    ohne sie beim Zerstören wieder abzumelden – bei oft neu gebauten Listen laufen dann bei jeder
+    Raste die Handler aller alten Listen mit. Hier gibt es stattdessen EINEN globalen Handler,
+    der das Ereignis an die Liste unter dem Mauszeiger weitergibt.
+    """
+
+    STEP = 70          # Pixel pro Mausrad-Raste (bei 100 % Skalierung)
+    _frames = weakref.WeakValueDictionary()   # Canvas-Pfad → ScrollFrame
+
+    def __init__(self, master, **kwargs):
+        super().__init__(master, **kwargs)
+        self._pending = 0.0
+        self._animating = False
+        if sys.platform.startswith('win'):
+            # CTk-eigene globale Bindings ersetzen (sie gelten für alle Instanzen)
+            for seq in ('<KeyPress-Shift_L>', '<KeyPress-Shift_R>',
+                        '<KeyRelease-Shift_L>', '<KeyRelease-Shift_R>'):
+                self.unbind_all(seq)
+            ScrollFrame._frames[str(self._parent_canvas)] = self
+            # ohne add → ersetzt alle bisherigen Handler (auch den gerade von CTk angelegten)
+            self.bind_all('<MouseWheel>', ScrollFrame._dispatch)
+
+    @classmethod
+    def _dispatch(cls, event):
+        widget = event.widget
+        while widget is not None and not isinstance(widget, str):
+            frame = cls._frames.get(str(widget))
+            if frame is not None:
+                frame._on_wheel(event)
+                return
+            widget = getattr(widget, 'master', None)
+
+    def _on_wheel(self, event):
+        if not self.winfo_exists() or self._parent_canvas.yview() == (0.0, 1.0):
+            return
+        scale = ctk.ScalingTracker.get_widget_scaling(self)
+        self._pending += -event.delta / 120 * self.STEP * scale
+        if not self._animating:
+            self._animating = True
+            self._animate()
+
+    def _animate(self):
+        """Gleitet den Rest in kleinen Schritten ab (weicher als ein harter Sprung)."""
+        if not self.winfo_exists() or abs(self._pending) < 1:
+            self._pending = 0.0
+            self._animating = False
+            return
+        step = int(self._pending * 0.35) or (1 if self._pending > 0 else -1)
+        self._parent_canvas.yview_scroll(step, 'units')   # 1 unit = 1 px (CTk-Einstellung unter Windows)
+        self._pending -= step
+        self.after(10, self._animate)
 
 
 # ---------------------------------------------------------------- Cover-Bilder
@@ -118,9 +178,15 @@ class Pill(ctk.CTkLabel):
 
 
 def chip_row(master, platforms_str, bg):
-    """Frame mit kleinen Plattform-Chips."""
+    """Frame mit kleinen Plattform-Chips – None, wenn keine Plattformen bekannt sind.
+
+    (Ein leerer CTkFrame wäre sonst 200×200 px groß.)
+    """
+    platforms = platform_list(platforms_str)
+    if not platforms:
+        return None
     row = ctk.CTkFrame(master, fg_color='transparent')
-    for p in platform_list(platforms_str):
+    for p in platforms:
         is_ps = 'playstation' in p.lower()
         ctk.CTkLabel(row, text=short_platform(p), font=theme.TINY, height=18, corner_radius=5, padx=6,
                      fg_color='#1d3557' if is_ps else theme.BORDER,
@@ -199,21 +265,31 @@ class GameCard(ctk.CTkFrame):
         ctk.CTkLabel(top, text=('★ ' if hyped else '') + name, font=theme.font(13, 'bold'), anchor='w',
                      text_color=theme.GOLD if hyped else theme.TEXT, wraplength=300, justify='left'
                      ).pack(side='left', fill='x', expand=True)
-        if game.get('psn_trophy_count'):
+        trophy_btn = None
+        if game.get('psn_trophy_count') and game.get('exophase_url'):
+            # Klick öffnet die Trophäenliste auf Exophase (statt den Bearbeiten-Dialog)
+            trophy_btn = ctk.CTkButton(top, text=f"🏆 {game['psn_trophy_count']}", width=46, height=22,
+                                       corner_radius=6, font=theme.font(10, 'bold'), fg_color='#1b2f4d',
+                                       hover_color='#27446e', text_color=theme.TROPHY,
+                                       command=lambda: webbrowser.open(game['exophase_url']))
+            trophy_btn.pack(side='right', padx=(4, 0))
+        elif game.get('psn_trophy_count'):
             Pill(top, f"🏆 {game['psn_trophy_count']}", ('#1b2f4d', theme.TROPHY), font=theme.TINY).pack(side='right', padx=(4, 0))
         if game.get('manual_tba'):
             Pill(top, "TBA", (theme.BORDER, theme.MUTED), font=theme.TINY).pack(side='right', padx=(4, 0))
 
         # Zeile 2: Plattformen
         chips = chip_row(self, game.get('platforms'), self.bg)
-        chips.grid(row=1, column=1, sticky='w', pady=(3, 0))
+        if chips:
+            chips.grid(row=1, column=1, sticky='w', pady=(3, 0))
 
         # Zeile 3: Countdown
         text, colors = countdown_info(game)
         Pill(self, text, colors).grid(row=2, column=1, sticky='w', pady=(5, 10))
 
         bind_hover_click(self, lambda: self.configure(fg_color=self.bg_hover),
-                         lambda: self.configure(fg_color=self.bg), lambda: on_click(game['uid']))
+                         lambda: self.configure(fg_color=self.bg), lambda: on_click(game['uid']),
+                         exclude=(trophy_btn,) if trophy_btn else ())
 
     def _reload_cover(self):
         if self.winfo_exists():
@@ -310,7 +386,7 @@ class MessagePopup(BaseWindow):
         ctk.CTkLabel(self, text=title_text, font=theme.H2, text_color=theme.TEXT).pack(pady=(4, 10))
         ctk.CTkButton(self, text="OK", command=self.close, width=140,
                       **theme.button_style('primary')).pack(side='bottom', pady=(8, 18))
-        lst = ctk.CTkScrollableFrame(self, fg_color='transparent')
+        lst = ScrollFrame(self, fg_color='transparent')
         lst.pack(fill='both', expand=True, padx=20)
         for msg in messages:
             card = ctk.CTkFrame(lst, fg_color=theme.CARD, corner_radius=8)

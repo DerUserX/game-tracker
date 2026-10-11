@@ -5,7 +5,7 @@ import customtkinter as ctk
 
 from ..models import format_date_european, make_game, platform_list, short_platform
 from . import theme
-from .widgets import BaseWindow, ConfirmDialog, empty_state
+from .widgets import ScrollFrame, BaseWindow, ConfirmDialog, empty_state
 
 COVER = (40, 54)
 
@@ -21,7 +21,7 @@ class WaitlistWindow(BaseWindow):
     def __init__(self, app, on_close=None):
         super().__init__(app, "Warteliste", 700, 620, on_close=on_close)
         self.header("Warteliste", "")
-        self.list = ctk.CTkScrollableFrame(self, fg_color=theme.SURFACE, corner_radius=theme.RADIUS)
+        self.list = ScrollFrame(self, fg_color=theme.SURFACE, corner_radius=theme.RADIUS)
         self.list.pack(fill='both', expand=True, padx=20, pady=20)
         self.render()
 
@@ -88,7 +88,7 @@ class WaitlistMatchDialog(BaseWindow):
         ctk.CTkButton(buttons, text="Von Warteliste entfernen", command=self._remove,
                       **theme.button_style('danger')).pack(side='left', padx=20, pady=12)
 
-        lst = ctk.CTkScrollableFrame(self, fg_color=theme.SURFACE, corner_radius=theme.RADIUS)
+        lst = ScrollFrame(self, fg_color=theme.SURFACE, corner_radius=theme.RADIUS)
         lst.pack(fill='both', expand=True, padx=20, pady=16)
         for game in new_games:
             self._row(lst, game)

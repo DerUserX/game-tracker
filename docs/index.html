@@ -59,7 +59,7 @@
   .game.hyped .name { color: var(--gold); }
   .badge { font-size: .68rem; font-weight: 700; padding: 2px 7px; border-radius: 6px; white-space: nowrap; }
   .badge.tba { background: var(--border); color: var(--muted); }
-  .badge.trophy { background: #1b2f4d; color: var(--trophy); }
+  .badge.trophy { background: #1b2f4d; color: var(--trophy); text-decoration: none; }
   .chips { display: flex; flex-wrap: wrap; gap: 4px; }
   .chip { font-size: .68rem; padding: 2px 6px; border-radius: 5px; background: var(--border); color: var(--muted); }
   .chip.ps { background: #1d3557; color: #9cc7ff; }
@@ -185,7 +185,11 @@ function gameHtml(g) {
     .map(p => `<span class="chip${p.toLowerCase().includes('playstation') ? ' ps' : ''}">${esc(SHORT[p] || p)}</span>`).join('');
   const [text, level] = countdown(g);
   const badges = (g.manual_tba ? '<span class="badge tba">TBA</span>' : '') +
-                 (g.psn_trophy_count ? `<span class="badge trophy">🏆 ${+g.psn_trophy_count}</span>` : '');
+                 (g.psn_trophy_count
+                   ? (/^https:\/\/www\.exophase\.com\//.test(g.exophase_url || '')
+                      ? `<a class="badge trophy" href="${esc(g.exophase_url)}" target="_blank" rel="noopener">🏆 ${+g.psn_trophy_count} ↗</a>`
+                      : `<span class="badge trophy">🏆 ${+g.psn_trophy_count}</span>`)
+                   : '');
   return `<div class="game${g.hyped ? ' hyped' : ''}">
     ${cover}
     <div class="info">

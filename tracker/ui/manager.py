@@ -3,7 +3,7 @@ import customtkinter as ctk
 
 from ..models import is_tba, sort_key_dated, title
 from . import theme
-from .widgets import BaseWindow, ConfirmDialog, bind_hover_click, empty_state
+from .widgets import ScrollFrame, BaseWindow, ConfirmDialog, bind_hover_click, empty_state
 
 COVER = (30, 40)
 
@@ -21,7 +21,7 @@ class ManagerWindow(BaseWindow):
         ctk.CTkButton(bar, text="＋  Hinzufügen", width=140, command=lambda: app.open_add_dialog(),
                       **theme.button_style('success')).pack(side='left', padx=(8, 0))
 
-        self.list = ctk.CTkScrollableFrame(self, fg_color=theme.SURFACE, corner_radius=theme.RADIUS)
+        self.list = ScrollFrame(self, fg_color=theme.SURFACE, corner_radius=theme.RADIUS)
         self.list.pack(fill='both', expand=True, padx=20, pady=(0, 20))
         self.render()
 

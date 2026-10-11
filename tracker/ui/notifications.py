@@ -4,7 +4,7 @@ from datetime import datetime
 import customtkinter as ctk
 
 from . import theme
-from .widgets import BaseWindow, ConfirmDialog, empty_state
+from .widgets import ScrollFrame, BaseWindow, ConfirmDialog, empty_state
 
 ICONS = {
     'date_change': '📅',
@@ -30,7 +30,7 @@ class NotificationsWindow(BaseWindow):
                                        **theme.button_style('ghost'))
         self.clear_btn.pack(side='left', padx=20, pady=12)
 
-        self.list = ctk.CTkScrollableFrame(self, fg_color='transparent')
+        self.list = ScrollFrame(self, fg_color='transparent')
         self.list.pack(fill='both', expand=True, padx=14, pady=10)
         self.render()
 

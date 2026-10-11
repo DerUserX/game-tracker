@@ -8,7 +8,7 @@ import customtkinter as ctk
 from ..trophies import IGNORE
 from ..models import has_playstation, title
 from . import theme
-from .widgets import BaseWindow, ConfirmDialog, chip_row, countdown_info, Pill
+from .widgets import ScrollFrame, BaseWindow, ConfirmDialog, chip_row, countdown_info, Pill
 
 COVER = (96, 128)
 
@@ -35,7 +35,9 @@ class EditDialog(BaseWindow):
         if self.game.get('display_name'):
             ctk.CTkLabel(info, text=f"IGDB: {self.game['name']}", font=theme.SMALL, text_color=theme.MUTED,
                          anchor='w').pack(fill='x')
-        chip_row(info, self.game.get('platforms'), theme.SURFACE).pack(anchor='w', pady=(8, 0))
+        chips = chip_row(info, self.game.get('platforms'), theme.SURFACE)
+        if chips:
+            chips.pack(anchor='w', pady=(8, 0))
         text, colors = countdown_info(self.game)
         Pill(info, text, colors).pack(anchor='w', pady=(8, 0))
         if self.game.get('psn_trophy_count'):
@@ -53,7 +55,7 @@ class EditDialog(BaseWindow):
                       **theme.button_style('danger')).pack(side='left', padx=20, pady=12)
 
         # --- Formular ---
-        form = ctk.CTkScrollableFrame(self, fg_color='transparent')
+        form = ScrollFrame(self, fg_color='transparent')
         form.pack(fill='both', expand=True, padx=12, pady=8)
         form.grid_columnconfigure((0, 1), weight=1, uniform='col')
 
@@ -105,6 +107,8 @@ class EditDialog(BaseWindow):
         self.error.grid(row=4, column=0, columnspan=2, sticky='ew', padx=8)
 
         self.bind('<Return>', lambda e: self.save())
+        # maximiert öffnen (verzögert, sonst überschreibt CTk den Zustand beim Aufbau)
+        self.after(80, lambda: self.winfo_exists() and self.state('zoomed'))
 
     def _set_cover(self):
         if self.winfo_exists():

@@ -6,7 +6,7 @@ import customtkinter as ctk
 from ..igdb import NetworkError
 from ..models import format_date_european, make_game, platform_list, short_platform
 from . import theme
-from .widgets import BaseWindow, empty_state
+from .widgets import ScrollFrame, BaseWindow, empty_state
 
 COVER = (40, 54)
 
@@ -46,7 +46,7 @@ class AddDialog(BaseWindow):
         self.bottom = ctk.CTkFrame(self, fg_color='transparent')
         self.bottom.pack(fill='x', side='bottom', padx=20, pady=14)
 
-        self.results = ctk.CTkScrollableFrame(self, fg_color=theme.SURFACE, corner_radius=theme.RADIUS)
+        self.results = ScrollFrame(self, fg_color=theme.SURFACE, corner_radius=theme.RADIUS)
         self.results.pack(fill='both', expand=True, padx=20, pady=(6, 0))
         empty_state(self.results, "🔍", "Noch keine Suche", "Gib einen Namen ein und drücke Enter")
 
