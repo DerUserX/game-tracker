@@ -243,7 +243,7 @@ def bind_hover_click(container, on_enter, on_leave, on_click, exclude=()):
 class GameCard(ctk.CTkFrame):
     COVER_SIZE = (46, 62)
 
-    def __init__(self, master, game, covers, on_click):
+    def __init__(self, master, game, covers, on_click, on_link=None):
         hyped = game.get('hyped')
         self.bg = theme.HYPE_BG if hyped else theme.CARD
         self.bg_hover = theme.HYPE_HOVER if hyped else theme.CARD_HOVER
@@ -271,7 +271,7 @@ class GameCard(ctk.CTkFrame):
             trophy_btn = ctk.CTkButton(top, text=f"🏆 {game['psn_trophy_count']}", width=46, height=22,
                                        corner_radius=6, font=theme.font(10, 'bold'), fg_color='#1b2f4d',
                                        hover_color='#27446e', text_color=theme.TROPHY,
-                                       command=lambda: webbrowser.open(game['exophase_url']))
+                                       command=lambda: self._open_link(game['exophase_url'], on_link))
             trophy_btn.pack(side='right', padx=(4, 0))
         elif game.get('psn_trophy_count'):
             Pill(top, f"🏆 {game['psn_trophy_count']}", ('#1b2f4d', theme.TROPHY), font=theme.TINY).pack(side='right', padx=(4, 0))
@@ -290,6 +290,12 @@ class GameCard(ctk.CTkFrame):
         bind_hover_click(self, lambda: self.configure(fg_color=self.bg_hover),
                          lambda: self.configure(fg_color=self.bg), lambda: on_click(game['uid']),
                          exclude=(trophy_btn,) if trophy_btn else ())
+
+    @staticmethod
+    def _open_link(url, on_link):
+        webbrowser.open(url)
+        if on_link:
+            on_link()   # z.B. Flyout schließen
 
     def _reload_cover(self):
         if self.winfo_exists():

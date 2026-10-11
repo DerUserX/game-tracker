@@ -88,6 +88,31 @@ class Popup(ctk.CTkToplevel):
         self._had_focus = False
         self.deiconify()
         self.after(30, self._grab_focus)
+        self._mouse_was_down = True   # Klick, der das Fenster geöffnet hat, nicht mitzählen
+        self.after(50, self._watch_clicks)
+
+    def _watch_clicks(self):
+        """Schließt das Flyout bei jedem Mausklick außerhalb.
+
+        Randlose Tray-Fenster bekommen unter Windows oft keinen Fokus – auf FocusOut allein
+        ist daher kein Verlass. Solange es offen ist, wird der Maustastenzustand abgefragt.
+        """
+        if not self.is_open:
+            return
+        try:
+            state = ctypes.windll.user32.GetAsyncKeyState
+            down = bool(state(0x01) & 0x8000 or state(0x02) & 0x8000)  # linke/rechte Maustaste
+        except (AttributeError, OSError):
+            return
+        if down and not self._mouse_was_down:
+            x, y = self.winfo_pointerxy()
+            inside = (self.winfo_rootx() <= x < self.winfo_rootx() + self.winfo_width()
+                      and self.winfo_rooty() <= y < self.winfo_rooty() + self.winfo_height())
+            if not inside:
+                self.close()
+                return
+        self._mouse_was_down = down
+        self.after(50, self._watch_clicks)
 
     # ------------------------------------------------------------- Aufbau
     def _build_header(self):
@@ -222,7 +247,8 @@ class Popup(ctk.CTkToplevel):
                 gap = days_between(games[i - 1], game)
                 if gap:
                     GapSeparator(lst, gap).pack(fill='x', pady=1)
-            GameCard(lst, game, self.app.covers, self._open_game).pack(fill='x', padx=(10, 4), pady=4)
+            GameCard(lst, game, self.app.covers, self._open_game,
+                     on_link=self.close).pack(fill='x', padx=(10, 4), pady=4)
         return lst
 
     def _on_tab(self, value):

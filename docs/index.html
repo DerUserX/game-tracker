@@ -233,12 +233,13 @@ function render() {
 }
 
 function show(p) {
+  const changed = p !== page;
   page = p;
   $('tab0').classList.toggle('active', p === 0);
   $('tab1').classList.toggle('active', p === 1);
   $('indicator').style.transform = `translateX(${p * 100}%)`;
   $('track').style.transform = `translateX(-${p * 50}%)`;
-  window.scrollTo({ top: 0 });
+  if (changed) window.scrollTo({ top: 0 });   // nur beim Seitenwechsel nach oben, nicht beim Zurückfedern
 }
 
 // ---------- Daten ----------
@@ -300,11 +301,12 @@ document.addEventListener('touchend', e => {
   const dx = e.changedTouches[0].screenX - startX;
   track.style.transition = 'transform .3s ease';
   indicator.style.transition = 'transform .3s ease';
-  if (horizontal && Math.abs(dx) > window.innerWidth * 0.15) {
+  if (!horizontal) return;   // normales Hoch-/Runterscrollen: nichts anfassen
+  if (Math.abs(dx) > window.innerWidth * 0.15) {
     if (dx < 0 && page === 0) return show(1);
     if (dx > 0 && page === 1) return show(0);
   }
-  show(page);
+  show(page);   // zurückfedern auf die aktuelle Seite
 }, { passive: true });
 </script>
 </body>
