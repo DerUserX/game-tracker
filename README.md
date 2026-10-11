@@ -1,71 +1,73 @@
 # Game Release Tracker
 
-Tray app for upcoming game releases: countdown, IGDB covers, release reminders, waitlist,
-trophy alerts via Exophase, and a phone view (PWA) synced via a GitHub Gist.
-It updates itself automatically from the GitHub releases of this repo.
+Tray-App für kommende Spiele-Releases: Countdown, IGDB-Cover, Release-Erinnerungen, Warteliste,
+Trophäen-Benachrichtigungen über Exophase und eine Handy-Ansicht (PWA), synchronisiert über ein GitHub-Gist.
+Die App aktualisiert sich selbst aus den GitHub-Releases dieses Repos.
 
-## One-time setup on the target PC
+## Einmalige Einrichtung auf dem Ziel-PC
 
-1. Create a folder, e.g. `C:\Tools\GameTracker\`.
-2. Download `GameTracker.exe` from the **latest release** of this repo:
+1. Einen Ordner anlegen, z.B. `C:\Tools\GameTracker\`.
+2. `GameTracker.exe` aus dem **neuesten Release** dieses Repos herunterladen:
    https://github.com/DerUserX/game-tracker/releases/latest
-3. Put these files from the old installation **next to the exe**:
+3. Diese Dateien von der alten Installation **neben die exe** legen:
    `games.json`, `config.json`, `waitlist.json`, `notifications.json`.
-   **`config.json` must contain the credentials** (`igdb_client_id`, `igdb_client_secret`, `github_token`).
-   If one is missing, the app shows a notice at startup.
-4. Start `GameTracker.exe`. The icon appears in the tray (possibly under the "^" arrow).
-5. Autostart: `Win+R` → `shell:startup` → put a shortcut to `GameTracker.exe` there.
+   **`config.json` muss die Zugangsdaten enthalten** (`igdb_client_id`, `igdb_client_secret`, `github_token`).
+   Fehlt einer, zeigt die App beim Start einen Hinweis.
+4. Die **alte Version 1.8 beenden** und aus dem Autostart entfernen. Sonst überschreibt sie das Gist
+   mit ihrer Liste ohne Cover-IDs.
+5. `GameTracker.exe` starten. Das Icon erscheint im Tray (evtl. unter dem „^“-Pfeil).
+6. Autostart: `Win+R` → `shell:startup` → dort eine Verknüpfung zu `GameTracker.exe` ablegen.
 
-Next to the exe, the app creates `covers\` (cover cache) and `gametracker.log` (log file for troubleshooting).
+Neben der exe legt die App `covers\` (Cover-Cache) und `gametracker.log` (Protokoll für die Fehlersuche) an.
 
 ## Updates
 
-Nothing to do: the app checks at startup and every 6 hours for a newer release,
-downloads it, restarts itself briefly and reports "Updated to version X".
-If a dialog is open, it waits until you close it.
+Nichts zu tun: Die App prüft beim Start und alle 6 Stunden, ob es ein neueres Release gibt,
+lädt es herunter, startet sich kurz neu und meldet „Aktualisiert auf Version X“.
+Ist gerade ein Dialog offen, wartet sie, bis du ihn schließt.
 
-How a new version gets made: a push to `main` that touches app files (`tracker/`, `gametracker.pyw`,
-`requirements.txt`, `GameTracker.spec`, `icon.ico`) automatically builds a new exe and release
-(GitHub Actions, ~3–5 minutes).
+So entsteht eine neue Version: Ein Push auf `main`, der App-Dateien betrifft (`tracker/`, `gametracker.pyw`,
+`requirements.txt`, `GameTracker.spec`, `icon.ico`), baut automatisch eine neue exe und ein Release
+(GitHub Actions, ca. 3–5 Minuten).
 
-## Phone view (PWA)
+## Handy-Ansicht (PWA)
 
-https://deruserx.github.io/game-tracker/ – served from the `docs/` folder via GitHub Pages
-and updated automatically about 1 minute after every push.
-The game list comes from the Gist that the desktop app updates on every change.
+https://deruserx.github.io/game-tracker/ – wird aus dem Ordner `docs/` per GitHub Pages ausgeliefert
+und ist etwa 1 Minute nach jedem Push aktuell.
+Die Spieleliste kommt aus dem Gist, das die Desktop-App bei jeder Änderung aktualisiert.
 
-## Trophy alerts
+## Trophäen-Benachrichtigungen
 
-Once a day, the app looks up every PlayStation game in the tracker on Exophase. Exophase usually
-discovers new trophy lists before release. You get an alert when a list appears for the first time
-or new trophies get added (DLC). No token needed.
-In the edit dialog: **Check now**, **Wrong match** (ignores the hit), **↗** opens the list on Exophase.
+Einmal täglich sucht die App jedes PlayStation-Spiel im Tracker auf Exophase. Exophase entdeckt neue
+Trophäenlisten meist schon vor Release. Du wirst benachrichtigt, wenn eine Liste erstmals auftaucht
+oder Trophäen dazukommen (DLC). Kein Token nötig.
+Im Bearbeiten-Dialog: **Jetzt prüfen**, **Falscher Treffer** (ignoriert den Treffer), **↗** öffnet die Liste auf Exophase.
 
-## Development
+## Entwicklung
 
 ```
 pip install -r requirements.txt
 python gametracker.pyw --show
 ```
 
-- `GAMETRACKER_DATA_DIR=<folder>`: use test data from a different folder
-- `GAMETRACKER_NO_CLOUD=1`: no upload to the Gist (otherwise every test change ends up on your phone)
-- `GAMETRACKER_UPDATE_URL=<path/URL>`: alternative release info (for testing the self-update)
-- Build the exe locally: `build.bat` → `release\GameTracker.exe` (version `0.0.0-dev`, never updates itself)
+- `GAMETRACKER_DATA_DIR=<Ordner>`: Testdaten aus einem anderen Ordner verwenden
+- `GAMETRACKER_NO_CLOUD=1`: kein Upload ins Gist (sonst landet jede Teständerung auf dem Handy)
+- `GAMETRACKER_UPDATE_URL=<Pfad/URL>`: alternative Release-Info (zum Testen des Self-Updates)
+- Exe lokal bauen: `build.bat` → `release\GameTracker.exe` (Version `0.0.0-dev`, aktualisiert sich nie selbst)
 
-Personal data and `config.json` are in `.gitignore` and must never end up in the repo.
+Persönliche Daten und `config.json` stehen in `.gitignore` und dürfen nie ins Repo.
 
-| File | Purpose |
+| Datei | Zweck |
 |---|---|
-| `gametracker.pyw` | Entry point (logging, single instance) |
-| `tracker/config.py` | Constants; reads credentials from `config.json` |
-| `tracker/storage.py` | Load/save JSON (thread-safe, atomic) |
-| `tracker/igdb.py` | IGDB search, ID lookup, name matching |
-| `tracker/updater.py` | Daily update, reminders, waitlist, cover backfill |
-| `tracker/trophies.py` | Exophase trophy monitoring |
-| `tracker/selfupdate.py` | Self-update from GitHub releases |
-| `tracker/cloud.py` | Gist upload |
-| `tracker/covers.py` | Cover download/cache |
-| `tracker/ui/` | CustomTkinter UI (`app.py` = a single Tk root plus a task queue) |
+| `gametracker.pyw` | Einstiegspunkt (Logging, Einzelinstanz) |
+| `tracker/config.py` | Konstanten; liest die Zugangsdaten aus `config.json` |
+| `tracker/storage.py` | JSON laden/speichern (thread-safe, atomar) |
+| `tracker/igdb.py` | IGDB-Suche, ID-Abfrage, Namensvergleich |
+| `tracker/updater.py` | Tägliches Update, Erinnerungen, Warteliste, Cover nachladen |
+| `tracker/trophies.py` | Trophäen-Überwachung über Exophase |
+| `tracker/selfupdate.py` | Self-Update aus GitHub-Releases |
+| `tracker/cloud.py` | Gist-Upload |
+| `tracker/covers.py` | Cover-Download/-Cache |
+| `tracker/ui/` | CustomTkinter-Oberfläche (`app.py` = ein einziger Tk-Root plus Task-Queue) |
 | `docs/` | PWA (GitHub Pages) |
-| `.github/workflows/release.yml` | Automatic exe build + release |
+| `.github/workflows/release.yml` | Automatischer Exe-Build + Release |

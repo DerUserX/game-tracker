@@ -1,8 +1,8 @@
-"""Trophy monitoring via Exophase.
+"""Trophäen-Überwachung über Exophase.
 
-Exophase discovers new PSN trophy lists on its own, often before release (shown with 0 players).
-Once a day, every PlayStation game in the tracker is searched for by name; an alert is raised
-when a trophy list appears for the first time or the trophy count goes up (DLC).
+Exophase entdeckt neue PSN-Trophäenlisten selbstständig, oft schon vor Release (mit 0 Spielern).
+Einmal täglich wird jedes PlayStation-Spiel im Tracker per Name gesucht; Meldung, wenn eine
+Trophäenliste erstmals auftaucht oder die Anzahl steigt (DLC).
 """
 import logging
 import time
@@ -17,13 +17,13 @@ from .models import days_until, has_playstation, title
 log = logging.getLogger(__name__)
 
 SEARCH_URL = 'https://api.exophase.com/public/archive/platform/psn/page/1'
-HEADERS = {'User-Agent': f'GameReleaseTracker/{config.APP_VERSION} (private use)'}
-IGNORE = '-'          # exophase_id value for "wrong match, ignore"
+HEADERS = {'User-Agent': f'GameReleaseTracker/{config.APP_VERSION} (privat)'}
+IGNORE = '-'          # exophase_id-Wert für "falscher Treffer, ignorieren"
 MIN_RATIO = 0.92
 
 
 def _normalize(name):
-    """Like igdb.normalize_name, but also strips diacritics ('Yōtei' → 'yotei')."""
+    """Wie igdb.normalize_name, entfernt zusätzlich Akzente ('Yōtei' → 'yotei')."""
     ascii_name = unicodedata.normalize('NFKD', name or '').encode('ascii', 'ignore').decode()
     return igdb.normalize_name(ascii_name)
 
@@ -51,7 +51,7 @@ class ExophaseMonitor:
         return games.get('list', []) if isinstance(games, dict) else []
 
     def find(self, game):
-        """Best Exophase entry for a game, or None."""
+        """Bester Exophase-Eintrag für ein Spiel oder None."""
         known_id = game.get('exophase_id')
         names = [n for n in (game.get('name'), game.get('display_name')) if n]
         for name in dict.fromkeys(names):
@@ -67,7 +67,7 @@ class ExophaseMonitor:
         return None
 
     def check_all(self):
-        """Checks all PS games; returns message texts for the popup."""
+        """Prüft alle PS-Spiele; gibt Meldungstexte für das Popup zurück."""
         messages = []
         changed = False
 
@@ -77,7 +77,7 @@ class ExophaseMonitor:
             try:
                 entry = self.find(game)
             except Exception as e:
-                log.warning("Exophase query for %s failed: %s", game['name'], e)
+                log.warning("Exophase-Abfrage für %s fehlgeschlagen: %s", game['name'], e)
                 continue
             if not entry:
                 continue
@@ -89,12 +89,12 @@ class ExophaseMonitor:
             already_out = days is not None and days < 0
 
             if old_count == 0 and count > 0 and not already_out:
-                text = f"{name}: trophy list is here ({count} trophies)"
-                self.store.add_notification("🏆 Trophy list available", text, "trophy_added", name)
+                text = f"{name}: Trophäenliste ist da ({count} Trophäen)"
+                self.store.add_notification("🏆 Trophäenliste verfügbar", text, "trophy_added", name)
                 messages.append(f"🏆 {text}")
             elif old_count and count > old_count:
-                text = f"{name}: +{count - old_count} trophies (now {count})"
-                self.store.add_notification("🏆 New trophies", text, "trophy_added", name)
+                text = f"{name}: +{count - old_count} Trophäen (jetzt {count})"
+                self.store.add_notification("🏆 Neue Trophäen", text, "trophy_added", name)
                 messages.append(f"🏆 {text}")
 
             fields = {

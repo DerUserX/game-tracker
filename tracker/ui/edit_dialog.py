@@ -39,7 +39,7 @@ class EditDialog(BaseWindow):
         text, colors = countdown_info(self.game)
         Pill(info, text, colors).pack(anchor='w', pady=(8, 0))
         if self.game.get('psn_trophy_count'):
-            Pill(info, f"🏆 {self.game['psn_trophy_count']} trophies",
+            Pill(info, f"🏆 {self.game['psn_trophy_count']} Trophäen",
                  ('#1b2f4d', theme.TROPHY)).pack(anchor='w', pady=(6, 0))
 
         # --- Buttons unten ---
@@ -66,11 +66,11 @@ class EditDialog(BaseWindow):
         self.igdb_id = self._field(form, 2, 0, "IGDB-ID", self.game.get('igdb_id'),
                                    "bestimmt das Spiel eindeutig – nur ändern, wenn falsch")
 
-        # Trophies (Exophase)
-        self.trophy_fields = {}  # staged changes, applied on "Save"
+        # Trophäen (Exophase)
+        self.trophy_fields = {}  # vorgemerkte Änderungen, werden mit „Speichern" übernommen
         box = ctk.CTkFrame(form, fg_color='transparent')
         box.grid(row=2, column=1, sticky='nsew', padx=8, pady=6)
-        ctk.CTkLabel(box, text="Trophies (Exophase)", font=theme.SMALL_BOLD, text_color=theme.MUTED,
+        ctk.CTkLabel(box, text="Trophäen (Exophase)", font=theme.SMALL_BOLD, text_color=theme.MUTED,
                      anchor='w').pack(fill='x')
         self.trophy_status = ctk.CTkLabel(box, text="", font=theme.SMALL, text_color=theme.TEXT, anchor='w',
                                           justify='left', wraplength=300)
@@ -78,9 +78,9 @@ class EditDialog(BaseWindow):
         row = ctk.CTkFrame(box, fg_color='transparent')
         row.pack(fill='x')
         small = {**theme.button_style('subtle'), 'height': 28, 'font': theme.SMALL_BOLD}
-        self.check_btn = ctk.CTkButton(row, text="Check now", width=100, command=self.check_trophies, **small)
+        self.check_btn = ctk.CTkButton(row, text="Jetzt prüfen", width=100, command=self.check_trophies, **small)
         self.check_btn.pack(side='left')
-        self.wrong_btn = ctk.CTkButton(row, text="Wrong match", width=110, command=self.ignore_match, **small)
+        self.wrong_btn = ctk.CTkButton(row, text="Falscher Treffer", width=120, command=self.ignore_match, **small)
         self.wrong_btn.pack(side='left', padx=(6, 0))
         self.open_btn = ctk.CTkButton(row, text="↗", width=32, command=self.open_exophase, **small)
         self.open_btn.pack(side='left', padx=(6, 0))
@@ -129,17 +129,17 @@ class EditDialog(BaseWindow):
     def _update_trophy_status(self, override=None):
         exo_id = self._trophy_value('exophase_id')
         if not has_playstation(self.game):
-            text, color = "Not a PlayStation game", theme.SUBTLE
+            text, color = "Kein PlayStation-Spiel", theme.SUBTLE
         elif override:
             text, color = override
         elif exo_id == IGNORE:
-            text, color = "Match ignored – \"Check now\" searches again", theme.SUBTLE
+            text, color = "Treffer ignoriert – „Jetzt prüfen“ sucht neu", theme.SUBTLE
         elif exo_id:
-            text = (f"🏆 {self._trophy_value('psn_trophy_count')} trophies\n"
+            text = (f"🏆 {self._trophy_value('psn_trophy_count')} Trophäen\n"
                     f"Exophase: {self._trophy_value('exophase_title')}")
             color = theme.TROPHY
         else:
-            text, color = "No trophy list found yet – checked daily", theme.MUTED
+            text, color = "Noch keine Trophäenliste – wird täglich geprüft", theme.MUTED
         self.trophy_status.configure(text=text, text_color=color)
         has_match = bool(exo_id) and exo_id != IGNORE
         self.check_btn.configure(state='normal' if has_playstation(self.game) else 'disabled')
@@ -148,7 +148,7 @@ class EditDialog(BaseWindow):
 
     def check_trophies(self):
         self.check_btn.configure(state='disabled')
-        self._update_trophy_status(("Searching on Exophase…", theme.MUTED))
+        self._update_trophy_status(("Suche auf Exophase…", theme.MUTED))
         game = {**self.game, 'exophase_id': ''}
 
         def work():
@@ -161,7 +161,7 @@ class EditDialog(BaseWindow):
             if not self.winfo_exists():
                 return
             if error:
-                self._update_trophy_status(("⚠️ Exophase not reachable", theme.WARNING))
+                self._update_trophy_status(("⚠️ Exophase nicht erreichbar", theme.WARNING))
             elif entry:
                 self.trophy_fields = {
                     'exophase_id': str(entry.get('master_id', '')),
@@ -173,7 +173,7 @@ class EditDialog(BaseWindow):
             else:
                 self.trophy_fields = {'exophase_id': '', 'exophase_title': '', 'exophase_url': '',
                                       'psn_trophy_count': 0}
-                self._update_trophy_status(("No trophy list found yet", theme.MUTED))
+                self._update_trophy_status(("Noch keine Trophäenliste gefunden", theme.MUTED))
             self.check_btn.configure(state='normal')
 
         threading.Thread(target=work, daemon=True).start()

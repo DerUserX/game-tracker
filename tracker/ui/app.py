@@ -195,18 +195,18 @@ class TrackerApp:
 
     def _startup_notices(self, updated_to):
         if updated_to:
-            text = f"Game Tracker was updated to version {updated_to}."
-            self.store.add_notification("⬆️ Updated", text, "update")
+            text = f"Game Tracker wurde auf Version {updated_to} aktualisiert."
+            self.store.add_notification("⬆️ Aktualisiert", text, "update")
             try:
-                self.icon.notify(text, config.APP_NAME)  # Windows notification
+                self.icon.notify(text, config.APP_NAME)  # Windows-Benachrichtigung
             except Exception:
                 pass
         missing = config.missing_secrets()
         if missing:
-            MessagePopup(self, "Credentials missing in config.json",
-                         [f"Missing entries: {', '.join(missing)}",
-                          "Without them there are no IGDB updates or Gist uploads. "
-                          "Copy config.json from the old PC or add the values (see README)."], "⚠️")
+            MessagePopup(self, "Zugangsdaten fehlen in config.json",
+                         [f"Fehlende Einträge: {', '.join(missing)}",
+                          "Ohne sie gibt es keine IGDB-Updates und keinen Gist-Upload. "
+                          "config.json vom alten PC übernehmen oder Werte ergänzen (siehe README)."], "⚠️")
 
     def run(self, show_popup=False, updated_to=None):
         self._start_tray()
