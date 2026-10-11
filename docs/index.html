@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#12162a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Game Release Tracker</title>
+<style>
+  :root {
+    --bg: #12162a; --surface: #1a1f36; --card: #232a45; --border: #2f3757;
+    --text: #e8ecf8; --muted: #8f97b5; --subtle: #5f6788;
+    --accent: #4a90e2; --gold: #f5c542; --hype-bg: #2c2816; --hype-border: #d9a520;
+    --today-bg: #1f4d33; --today: #5ee08f; --week-bg: #4d2323; --week: #ff7b72;
+    --month-bg: #4a3714; --month: #f5b14a; --later-bg: #1d3352; --later: #6cb0ff;
+    --none-bg: #2a3048; --none: #9aa3c0; --trophy: #5aa9ff;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif; overflow-x: hidden;
+         padding-bottom: env(safe-area-inset-bottom); }
+
+  header { position: sticky; top: 0; z-index: 10; background: var(--surface);
+           padding: calc(14px + env(safe-area-inset-top)) 16px 0; }
+  .title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  h1 { margin: 0; font-size: 1.3rem; font-weight: 700; letter-spacing: -.01em; }
+  .sub { color: var(--muted); font-size: .8rem; margin-top: 2px; }
+  .reload { background: var(--card); border: 0; color: var(--text); width: 36px; height: 36px;
+            border-radius: 10px; font-size: 1.05rem; cursor: pointer; flex-shrink: 0; }
+  .reload.spin { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .tabs { position: relative; display: grid; grid-template-columns: 1fr 1fr; margin: 12px 0 0;
+          background: var(--bg); border-radius: 10px; padding: 3px; }
+  .tabs button { position: relative; z-index: 1; border: 0; background: none; color: var(--muted);
+                 font: inherit; font-weight: 700; font-size: .85rem; padding: 9px 4px; cursor: pointer;
+                 transition: color .2s; }
+  .tabs button.active { color: #fff; }
+  .tabs .indicator { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px);
+                     background: var(--accent); border-radius: 8px; transition: transform .3s ease; }
+  .tabs-wrap { padding-bottom: 10px; }
+
+  .viewport { overflow: hidden; }
+  .track { display: flex; width: 200%; transition: transform .3s ease; }
+  .page { width: 50%; flex-shrink: 0; padding: 10px 12px 24px; min-height: 60vh; }
+
+  .game { display: flex; gap: 12px; background: var(--card); border-radius: 12px; padding: 10px;
+          margin: 8px 0; border: 2px solid transparent; }
+  .game.hyped { background: var(--hype-bg); border-color: var(--hype-border); }
+  .cover { width: 54px; height: 72px; border-radius: 8px; flex-shrink: 0; object-fit: cover;
+           background: linear-gradient(160deg, #2b3354, #3a4470); display: flex; align-items: center;
+           justify-content: center; color: #8c96b9; font-weight: 700; font-size: 1.3rem; }
+  .info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 5px; }
+  .name-row { display: flex; align-items: flex-start; gap: 6px; }
+  .name { font-weight: 700; font-size: 1rem; line-height: 1.25; flex: 1; }
+  .game.hyped .name { color: var(--gold); }
+  .badge { font-size: .68rem; font-weight: 700; padding: 2px 7px; border-radius: 6px; white-space: nowrap; }
+  .badge.tba { background: var(--border); color: var(--muted); }
+  .badge.trophy { background: #1b2f4d; color: var(--trophy); }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { font-size: .68rem; padding: 2px 6px; border-radius: 5px; background: var(--border); color: var(--muted); }
+  .chip.ps { background: #1d3557; color: #9cc7ff; }
+  .pill { align-self: flex-start; font-size: .76rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
+
+  .gap { display: flex; align-items: center; gap: 8px; margin: 2px 6px; }
+  .gap .line { flex: 1; height: 1px; background: var(--border); }
+  .gap .txt { font-size: .68rem; color: var(--subtle); white-space: nowrap; }
+
+  .empty { text-align: center; color: var(--muted); padding: 60px 20px; }
+  .empty .icon { font-size: 2.4rem; }
+  .footer { text-align: center; color: var(--subtle); font-size: .72rem; padding: 4px 16px 20px; }
+  .footer.warn { color: var(--month); }
+</style>
+</head>
+<body>
+<header>
+  <div class="title-row">
+    <div>
+      <h1>Meine Hype Games</h1>
+      <div class="sub" id="sub">Lade…</div>
+    </div>
+    <button class="reload" id="reload" aria-label="Neu laden">⟳</button>
+  </div>
+  <div class="tabs-wrap">
+    <div class="tabs" role="tablist">
+      <div class="indicator" id="indicator"></div>
+      <button id="tab0" class="active" role="tab">📅 Mit Datum</button>
+      <button id="tab1" role="tab">📭 Ohne Datum</button>
+    </div>
+  </div>
+</header>
+
+<div class="viewport">
+  <div class="track" id="track">
+    <div class="page" id="page0"></div>
+    <div class="page" id="page1"></div>
+  </div>
+</div>
+<div class="footer" id="footer"></div>
+
+<script>
+const GIST_RAW_URL = "https://gist.githubusercontent.com/DerUserX/6223c6e0ef9f2d6f85060d161a4650e1/raw/games.json";
+// Lokales Testen: index.html?src=games.json
+const SOURCE = new URLSearchParams(location.search).get('src') || GIST_RAW_URL;
+const COVER_URL = id => `https://images.igdb.com/igdb/image/upload/t_cover_big/${id}.jpg`;
+
+let games = [], page = 0;
+const $ = id => document.getElementById(id);
+
+// ---------- Helfer ----------
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function parseDate(s) {
+  if (!s) return null;
+  const m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  const d = m ? new Date(+m[3], +m[2] - 1, +m[1]) : new Date(s);
+  return isNaN(d) ? null : d;
+}
+function daysUntil(s) {
+  const target = parseDate(s);
+  if (!target) return null;
+  const now = new Date(); now.setHours(0,0,0,0); target.setHours(0,0,0,0);
+  return Math.round((target - now) / 86400000);
+}
+function effectiveDate(g) {
+  if (g.release_date) return parseDate(g.release_date);
+  if (g.release_window) {
+    const [season, year] = g.release_window.split(' ');
+    const start = { 'Frühling': [2,20], 'Sommer': [5,21], 'Herbst': [8,23], 'Winter': [11,21] }[season];
+    if (start && year) return new Date(+year, start[0], start[1]);
+  }
+  return parseDate(g.last_known_date);
+}
+const isTba = g => g.manual_tba || (!g.release_date && !g.release_window);
+const sortByDate = (a, b) => (effectiveDate(a) || new Date(9999,0)) - (effectiveDate(b) || new Date(9999,0));
+const weeks = d => `${Math.round(d / 7 * 2) / 2} Wochen`;
+
+// Plattform-Formatierung (wie in der PC-App)
+const SHORT = { 'PlayStation 5':'PS5', 'PlayStation 4':'PS4', 'PlayStation 3':'PS3', 'Nintendo Switch 2':'Switch 2',
+                'Nintendo Switch':'Switch', 'PlayStation VR2':'PS VR2' };
+function platformList(str) {
+  if (!str) return [];
+  let list = [];
+  for (let p of str.split(',').map(s => s.trim()).filter(Boolean)) {
+    const low = p.toLowerCase();
+    if (low.includes('xbox')) continue;
+    if (low.includes('microsoft windows')) p = 'PC';
+    if (!list.includes(p)) list.push(p);
+  }
+  if (list.some(p => p.toLowerCase().includes('switch 2')))
+    list = list.filter(p => !(p.toLowerCase().endsWith('switch') && !p.toLowerCase().includes('switch 2')));
+  const key = n => { n = n.toLowerCase(); return n.includes('playstation 5') ? 0 : n.includes('switch 2') ? 1 : n === 'pc' ? 2 : 3; };
+  return list.sort((a, b) => key(a) - key(b) || a.localeCompare(b));
+}
+
+function countdown(g) {
+  if (g.manual_tba) return [g.last_known_date ? `Platzhalter ignoriert: ${g.last_known_date}` : 'Datum unbekannt', 'none'];
+  if (g.release_date) {
+    const d = daysUntil(g.release_date);
+    if (d === null) return ['Datum unbekannt', 'none'];
+    const date = g.release_date;
+    if (d < 0) return [`Erschienen vor ${-d} ${d === -1 ? 'Tag' : 'Tagen'} · ${date}`, 'none'];
+    if (d === 0) return [`🎉 Heute! · ${date}`, 'today'];
+    if (d < 7) return [`🔥 Noch ${d} ${d === 1 ? 'Tag' : 'Tage'} · ${date}`, 'week'];
+    if (d < 30) return [`Noch ${d} Tage (${weeks(d)}) · ${date}`, 'month'];
+    return [`Noch ${d} Tage (${weeks(d)}) · ${date}`, 'later'];
+  }
+  if (g.release_window) return [`~ ${g.release_window}`, 'later'];
+  return ['Datum unbekannt', 'none'];
+}
+
+// ---------- Rendering ----------
+function gameHtml(g) {
+  const name = g.display_name || g.name;
+  const initial = esc((name || '?').charAt(0).toUpperCase());
+  const cover = g.cover_id
+    ? `<img class="cover" loading="lazy" src="${COVER_URL(esc(g.cover_id))}" alt=""
+            onerror="this.outerHTML='<div class=&quot;cover&quot;>${initial}</div>'">`
+    : `<div class="cover">${initial}</div>`;
+  const chips = platformList(g.platforms)
+    .map(p => `<span class="chip${p.toLowerCase().includes('playstation') ? ' ps' : ''}">${esc(SHORT[p] || p)}</span>`).join('');
+  const [text, level] = countdown(g);
+  const badges = (g.manual_tba ? '<span class="badge tba">TBA</span>' : '') +
+                 (g.psn_trophy_count ? `<span class="badge trophy">🏆 ${+g.psn_trophy_count}</span>` : '');
+  return `<div class="game${g.hyped ? ' hyped' : ''}">
+    ${cover}
+    <div class="info">
+      <div class="name-row"><div class="name">${g.hyped ? '★ ' : ''}${esc(name)}</div>${badges}</div>
+      ${chips ? `<div class="chips">${chips}</div>` : ''}
+      <div class="pill" style="background:var(--${level}-bg);color:var(--${level})">${esc(text)}</div>
+    </div>
+  </div>`;
+}
+
+function gapHtml(days, approx) {
+  const txt = (approx ? '~ ' : '') + (days === 1 ? '1 Tag' : `${days} Tage`);
+  return `<div class="gap"><div class="line"></div><div class="txt">${txt}</div><div class="line"></div></div>`;
+}
+
+function emptyHtml(text) {
+  return `<div class="empty"><div class="icon">📭</div><div>${text}</div></div>`;
+}
+
+function render() {
+  const dated = games.filter(g => !isTba(g)).sort(sortByDate);
+  const tba = games.filter(isTba).sort(sortByDate);
+
+  $('sub').textContent = `${games.length} Spiele · ${games.filter(g => g.hyped).length} gehypt`;
+  $('tab0').textContent = `📅 Mit Datum (${dated.length})`;
+  $('tab1').textContent = `📭 Ohne Datum (${tba.length})`;
+
+  let html = '';
+  dated.forEach((g, i) => {
+    if (i > 0) {
+      const prev = dated[i - 1], d1 = effectiveDate(prev), d2 = effectiveDate(g);
+      if (d1 && d2) {
+        const gap = Math.abs(Math.round((d2 - d1) / 86400000));
+        if (gap > 0) html += gapHtml(gap, (!prev.release_date && prev.release_window) || (!g.release_date && g.release_window));
+      }
+    }
+    html += gameHtml(g);
+  });
+  $('page0').innerHTML = html || emptyHtml('Keine Spiele mit Datum');
+  $('page1').innerHTML = tba.map(gameHtml).join('') || emptyHtml('Keine Spiele ohne Datum');
+}
+
+function show(p) {
+  page = p;
+  $('tab0').classList.toggle('active', p === 0);
+  $('tab1').classList.toggle('active', p === 1);
+  $('indicator').style.transform = `translateX(${p * 100}%)`;
+  $('track').style.transform = `translateX(-${p * 50}%)`;
+  window.scrollTo({ top: 0 });
+}
+
+// ---------- Daten ----------
+function load() {
+  $('reload').classList.add('spin');
+  fetch(SOURCE + (SOURCE.includes('?') ? '&' : '?') + 't=' + Date.now(), { cache: 'no-store' })
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(data => {
+      games = data;
+      try { localStorage.setItem('games', JSON.stringify(data)); } catch (e) {}
+      $('footer').className = 'footer';
+      $('footer').textContent = 'Stand: ' + new Date().toLocaleString('de-DE');
+      render();
+    })
+    .catch(() => {
+      try { games = JSON.parse(localStorage.getItem('games') || '[]'); } catch (e) { games = []; }
+      $('footer').className = 'footer warn';
+      $('footer').textContent = '⚠️ Offline – letzter bekannter Stand';
+      render();
+    })
+    .finally(() => $('reload').classList.remove('spin'));
+}
+
+$('tab0').onclick = () => show(0);
+$('tab1').onclick = () => show(1);
+$('reload').onclick = load;
+load();
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+
+// Countdown bei Rückkehr zur App neu berechnen
+document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
+
+// ---------- Swipe zwischen den Seiten ----------
+const track = $('track'), indicator = $('indicator');
+let startX = 0, startY = 0, dragging = false, horizontal = null;
+
+document.addEventListener('touchstart', e => {
+  startX = e.changedTouches[0].screenX; startY = e.changedTouches[0].screenY;
+  dragging = true; horizontal = null;
+  track.style.transition = indicator.style.transition = 'none';
+}, { passive: true });
+
+document.addEventListener('touchmove', e => {
+  if (!dragging) return;
+  const dx = e.changedTouches[0].screenX - startX, dy = e.changedTouches[0].screenY - startY;
+  if (horizontal === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) horizontal = Math.abs(dx) > Math.abs(dy);
+  if (!horizontal) return;
+  let offset = -page * 50 + (dx / window.innerWidth) * 50;
+  if (offset > 0) offset *= 0.3;
+  if (offset < -50) offset = -50 + (offset + 50) * 0.3;
+  track.style.transform = `translateX(${offset}%)`;
+  indicator.style.transform = `translateX(${Math.min(100, Math.max(0, -offset * 2))}%)`;
+}, { passive: true });
+
+document.addEventListener('touchend', e => {
+  if (!dragging) return;
+  dragging = false;
+  const dx = e.changedTouches[0].screenX - startX;
+  track.style.transition = 'transform .3s ease';
+  indicator.style.transition = 'transform .3s ease';
+  if (horizontal && Math.abs(dx) > window.innerWidth * 0.15) {
+    if (dx < 0 && page === 0) return show(1);
+    if (dx > 0 && page === 1) return show(0);
+  }
+  show(page);
+}, { passive: true });
+</script>
+</body>
+</html>

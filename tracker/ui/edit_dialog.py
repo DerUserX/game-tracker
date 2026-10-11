@@ -1,0 +1,221 @@
+"""Spiel bearbeiten."""
+import threading
+import webbrowser
+from datetime import datetime
+
+import customtkinter as ctk
+
+from ..trophies import IGNORE
+from ..models import has_playstation, title
+from . import theme
+from .widgets import BaseWindow, ConfirmDialog, chip_row, countdown_info, Pill
+
+COVER = (96, 128)
+
+
+class EditDialog(BaseWindow):
+    def __init__(self, app, uid, on_close=None):
+        self.uid = uid
+        game = app.store.find(uid)
+        super().__init__(app, f"Bearbeiten: {title(game)}", 720, 720, on_close=on_close)
+        self.game = dict(game)
+
+        # --- Kopf mit Cover ---
+        head = ctk.CTkFrame(self, fg_color=theme.SURFACE, corner_radius=0)
+        head.pack(fill='x')
+        self.cover = ctk.CTkLabel(head, text='')
+        self.cover.pack(side='left', padx=20, pady=16)
+        self._set_cover()
+        info = ctk.CTkFrame(head, fg_color='transparent')
+        info.pack(side='left', fill='both', expand=True, pady=16, padx=(0, 20))
+        hyped = self.game.get('hyped')
+        ctk.CTkLabel(info, text=('★ ' if hyped else '') + title(self.game), font=theme.H1,
+                     text_color=theme.GOLD if hyped else theme.TEXT, anchor='w', justify='left',
+                     wraplength=520).pack(fill='x')
+        if self.game.get('display_name'):
+            ctk.CTkLabel(info, text=f"IGDB: {self.game['name']}", font=theme.SMALL, text_color=theme.MUTED,
+                         anchor='w').pack(fill='x')
+        chip_row(info, self.game.get('platforms'), theme.SURFACE).pack(anchor='w', pady=(8, 0))
+        text, colors = countdown_info(self.game)
+        Pill(info, text, colors).pack(anchor='w', pady=(8, 0))
+        if self.game.get('psn_trophy_count'):
+            Pill(info, f"🏆 {self.game['psn_trophy_count']} trophies",
+                 ('#1b2f4d', theme.TROPHY)).pack(anchor='w', pady=(6, 0))
+
+        # --- Buttons unten ---
+        buttons = ctk.CTkFrame(self, fg_color=theme.SURFACE, corner_radius=0)
+        buttons.pack(fill='x', side='bottom')
+        ctk.CTkButton(buttons, text="💾  Speichern", width=140, command=self.save,
+                      **theme.button_style('success')).pack(side='right', padx=(6, 20), pady=12)
+        ctk.CTkButton(buttons, text="Abbrechen", width=110, command=self.close,
+                      **theme.button_style('ghost')).pack(side='right', pady=12)
+        ctk.CTkButton(buttons, text="🗑  Löschen", width=110, command=self.confirm_delete,
+                      **theme.button_style('danger')).pack(side='left', padx=20, pady=12)
+
+        # --- Formular ---
+        form = ctk.CTkScrollableFrame(self, fg_color='transparent')
+        form.pack(fill='both', expand=True, padx=12, pady=8)
+        form.grid_columnconfigure((0, 1), weight=1, uniform='col')
+
+        self.display_name = self._field(form, 0, 0, "Anzeigename", self.game.get('display_name'),
+                                        "leer = Originalname")
+        self.release_date = self._field(form, 0, 1, "Release-Datum", self.game.get('release_date'),
+                                        "TT.MM.JJJJ – leer = unbekannt")
+        self.platforms = self._field(form, 1, 0, "Plattformen", self.game.get('platforms'),
+                                     "kommagetrennt (wird bei Updates von IGDB überschrieben)", colspan=2)
+        self.igdb_id = self._field(form, 2, 0, "IGDB-ID", self.game.get('igdb_id'),
+                                   "bestimmt das Spiel eindeutig – nur ändern, wenn falsch")
+
+        # Trophies (Exophase)
+        self.trophy_fields = {}  # staged changes, applied on "Save"
+        box = ctk.CTkFrame(form, fg_color='transparent')
+        box.grid(row=2, column=1, sticky='nsew', padx=8, pady=6)
+        ctk.CTkLabel(box, text="Trophies (Exophase)", font=theme.SMALL_BOLD, text_color=theme.MUTED,
+                     anchor='w').pack(fill='x')
+        self.trophy_status = ctk.CTkLabel(box, text="", font=theme.SMALL, text_color=theme.TEXT, anchor='w',
+                                          justify='left', wraplength=300)
+        self.trophy_status.pack(fill='x', pady=(4, 4))
+        row = ctk.CTkFrame(box, fg_color='transparent')
+        row.pack(fill='x')
+        small = {**theme.button_style('subtle'), 'height': 28, 'font': theme.SMALL_BOLD}
+        self.check_btn = ctk.CTkButton(row, text="Check now", width=100, command=self.check_trophies, **small)
+        self.check_btn.pack(side='left')
+        self.wrong_btn = ctk.CTkButton(row, text="Wrong match", width=110, command=self.ignore_match, **small)
+        self.wrong_btn.pack(side='left', padx=(6, 0))
+        self.open_btn = ctk.CTkButton(row, text="↗", width=32, command=self.open_exophase, **small)
+        self.open_btn.pack(side='left', padx=(6, 0))
+        self._update_trophy_status()
+
+        # Schalter
+        switches = ctk.CTkFrame(form, fg_color=theme.SURFACE, corner_radius=theme.RADIUS)
+        switches.grid(row=3, column=0, columnspan=2, sticky='ew', padx=8, pady=(14, 6))
+        self.hyped = ctk.BooleanVar(value=self.game.get('hyped', False))
+        ctk.CTkSwitch(switches, text="★  Besonders gehypt", variable=self.hyped, font=theme.BODY_BOLD,
+                      text_color=theme.GOLD, progress_color=theme.HYPE_BORDER).pack(anchor='w', padx=16, pady=(14, 4))
+        self.manual_tba = ctk.BooleanVar(value=self.game.get('manual_tba', False))
+        ctk.CTkSwitch(switches, text="Datum ist nur ein Platzhalter (als TBA behandeln)", variable=self.manual_tba,
+                      font=theme.BODY_BOLD, text_color=theme.TEXT, progress_color=theme.DANGER_DARK
+                      ).pack(anchor='w', padx=16, pady=(8, 0))
+        ctk.CTkLabel(switches, text="Das Spiel wandert in „Ohne Datum“. Wird automatisch aufgehoben, "
+                                    "sobald IGDB ein neues Datum liefert.",
+                     font=theme.TINY, text_color=theme.SUBTLE, anchor='w', justify='left', wraplength=600
+                     ).pack(anchor='w', padx=62, pady=(0, 14))
+
+        self.error = ctk.CTkLabel(form, text="", font=theme.SMALL_BOLD, text_color=theme.DANGER, anchor='w')
+        self.error.grid(row=4, column=0, columnspan=2, sticky='ew', padx=8)
+
+        self.bind('<Return>', lambda e: self.save())
+
+    def _set_cover(self):
+        if self.winfo_exists():
+            self.cover.configure(image=self.app.covers.get(self.game.get('cover_id'), COVER, title(self.game),
+                                                           on_ready=self._set_cover))
+
+    def _field(self, parent, row, col, label, value, hint, colspan=1):
+        box = ctk.CTkFrame(parent, fg_color='transparent')
+        box.grid(row=row, column=col, columnspan=colspan, sticky='nsew', padx=8, pady=6)
+        ctk.CTkLabel(box, text=label, font=theme.SMALL_BOLD, text_color=theme.MUTED, anchor='w').pack(fill='x')
+        entry = ctk.CTkEntry(box, **theme.entry_style())
+        if value:
+            entry.insert(0, str(value))
+        entry.pack(fill='x')
+        ctk.CTkLabel(box, text=hint, font=theme.TINY, text_color=theme.SUBTLE, anchor='w').pack(fill='x')
+        return entry
+
+    # ------------------------------------------------------------- Aktionen
+    def _trophy_value(self, key):
+        return self.trophy_fields.get(key, self.game.get(key))
+
+    def _update_trophy_status(self, override=None):
+        exo_id = self._trophy_value('exophase_id')
+        if not has_playstation(self.game):
+            text, color = "Not a PlayStation game", theme.SUBTLE
+        elif override:
+            text, color = override
+        elif exo_id == IGNORE:
+            text, color = "Match ignored – \"Check now\" searches again", theme.SUBTLE
+        elif exo_id:
+            text = (f"🏆 {self._trophy_value('psn_trophy_count')} trophies\n"
+                    f"Exophase: {self._trophy_value('exophase_title')}")
+            color = theme.TROPHY
+        else:
+            text, color = "No trophy list found yet – checked daily", theme.MUTED
+        self.trophy_status.configure(text=text, text_color=color)
+        has_match = bool(exo_id) and exo_id != IGNORE
+        self.check_btn.configure(state='normal' if has_playstation(self.game) else 'disabled')
+        self.wrong_btn.configure(state='normal' if has_match else 'disabled')
+        self.open_btn.configure(state='normal' if has_match and self._trophy_value('exophase_url') else 'disabled')
+
+    def check_trophies(self):
+        self.check_btn.configure(state='disabled')
+        self._update_trophy_status(("Searching on Exophase…", theme.MUTED))
+        game = {**self.game, 'exophase_id': ''}
+
+        def work():
+            try:
+                self.app.call(done, self.app.trophies.find(game), None)
+            except Exception as e:
+                self.app.call(done, None, e)
+
+        def done(entry, error):
+            if not self.winfo_exists():
+                return
+            if error:
+                self._update_trophy_status(("⚠️ Exophase not reachable", theme.WARNING))
+            elif entry:
+                self.trophy_fields = {
+                    'exophase_id': str(entry.get('master_id', '')),
+                    'exophase_title': entry.get('title', ''),
+                    'exophase_url': entry.get('endpoint_awards', ''),
+                    'psn_trophy_count': int(entry.get('total_awards') or 0),
+                }
+                self._update_trophy_status()
+            else:
+                self.trophy_fields = {'exophase_id': '', 'exophase_title': '', 'exophase_url': '',
+                                      'psn_trophy_count': 0}
+                self._update_trophy_status(("No trophy list found yet", theme.MUTED))
+            self.check_btn.configure(state='normal')
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def ignore_match(self):
+        self.trophy_fields = {'exophase_id': IGNORE, 'exophase_title': '', 'exophase_url': '',
+                              'psn_trophy_count': 0}
+        self._update_trophy_status()
+
+    def open_exophase(self):
+        url = self._trophy_value('exophase_url')
+        if url:
+            webbrowser.open(url)
+
+    def save(self):
+        date = self.release_date.get().strip()
+        igdb_id = self.igdb_id.get().strip()
+
+        if igdb_id and not igdb_id.isdigit():
+            self.error.configure(text="Die IGDB-ID muss eine Zahl sein.")
+            return
+        if date:
+            try:
+                datetime.strptime(date, "%d.%m.%Y")
+            except ValueError:
+                self.error.configure(text="Ungültiges Datum – bitte TT.MM.JJJJ verwenden.")
+                return
+
+        manual_tba = self.manual_tba.get()
+        last_known = self.game.get('last_known_date', '')
+        if manual_tba and date and not last_known:
+            last_known = date
+
+        fields = dict(display_name=self.display_name.get().strip(), release_date=date,
+                      platforms=self.platforms.get().strip(), igdb_id=igdb_id, hyped=self.hyped.get(),
+                      manual_tba=manual_tba, last_known_date=last_known, **self.trophy_fields)
+        self.app.store.update_game(self.uid, **fields)
+        self.close()
+
+    def confirm_delete(self):
+        def delete():
+            self.app.store.delete_game(self.uid)
+            self.close()
+        ConfirmDialog(self.app, "Spiel löschen?", f"„{title(self.game)}“ wird aus dem Tracker entfernt.",
+                      on_confirm=delete)

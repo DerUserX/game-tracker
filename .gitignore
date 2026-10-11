@@ -1,0 +1,24 @@
+# Personal data & credentials – never commit these
+games.json
+config.json
+waitlist.json
+notifications.json
+*.bak
+covers/
+*.log
+*.tmp
+
+# Old version (contains hardcoded keys) & legacy files
+game_tracker*.pyw
+old ver/
+python test.py
+
+# Build output
+build/
+dist/
+release/
+tracker/version.py
+__pycache__/
+
+# Design source files
+*.psd

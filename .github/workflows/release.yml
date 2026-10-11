@@ -1,0 +1,48 @@
+# Builds GameTracker.exe on every app change and publishes it as a GitHub release.
+# The installed app checks these releases regularly and updates itself.
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tracker/**'
+      - 'gametracker.pyw'
+      - 'requirements.txt'
+      - 'GameTracker.spec'
+      - 'icon.ico'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  VERSION: 2.1.${{ github.run_number }}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt pyinstaller==6.22.3
+
+      - name: Write version
+        shell: pwsh
+        run: "\"VERSION = '$env:VERSION'\" | Out-File -Encoding utf8 tracker/version.py"
+
+      - name: Build exe
+        run: python -m PyInstaller GameTracker.spec --noconfirm --distpath release
+
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = git log -1 --pretty=%B
+          gh release create "v$env:VERSION" release/GameTracker.exe --title "Game Tracker $env:VERSION" --notes "$notes"
