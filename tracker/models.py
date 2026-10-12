@@ -36,11 +36,18 @@ def normalize_game(game):
     return game
 
 
-def make_game(result, hyped=False):
-    """Erzeugt ein Spiel aus einem IGDB-Ergebnis-dict."""
+def make_game(result, hyped=False, manual_tba=False):
+    """Erzeugt ein Spiel aus einem IGDB-Ergebnis-dict.
+
+    manual_tba: das IGDB-Datum ist nur ein Platzhalter → Spiel landet unter „Ohne Datum“,
+    das Datum wird als last_known_date gemerkt (wie beim Häkchen im Bearbeiten-Dialog).
+    """
+    release_date = format_date_european(result.get('release_date', ''))
     return normalize_game({
         'name': result.get('name', ''),
-        'release_date': format_date_european(result.get('release_date', '')),
+        'release_date': release_date,
+        'manual_tba': manual_tba,
+        'last_known_date': release_date if manual_tba else '',
         'platforms': result.get('platforms', ''),
         'rating': result.get('rating', 0),
         'igdb_id': result.get('igdb_id', ''),

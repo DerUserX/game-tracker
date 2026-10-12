@@ -6,7 +6,7 @@ import customtkinter as ctk
 from ..igdb import NetworkError
 from ..models import format_date_european, make_game, platform_list, short_platform
 from . import theme
-from .widgets import ScrollFrame, BaseWindow, empty_state
+from .widgets import ScrollFrame, BaseWindow, add_context_menu, empty_state
 
 COVER = (40, 54)
 
@@ -32,13 +32,20 @@ class AddDialog(BaseWindow):
         self.entry = ctk.CTkEntry(row, placeholder_text="Spielname, z.B. Ghost of Yotei", **theme.entry_style())
         self.entry.pack(side='left', fill='x', expand=True)
         self.entry.bind('<Return>', lambda e: self.search())
+        add_context_menu(self.entry)
         self.search_btn = ctk.CTkButton(row, text="Suchen", width=110, command=self.search,
                                         **theme.button_style('primary'))
         self.search_btn.pack(side='left', padx=(8, 0))
 
+        switches = ctk.CTkFrame(top, fg_color='transparent')
+        switches.pack(fill='x', pady=(12, 0))
         self.hyped = ctk.BooleanVar(value=False)
-        ctk.CTkSwitch(top, text="★  Besonders gehypt", variable=self.hyped, font=theme.BODY_BOLD,
-                      text_color=theme.GOLD, progress_color=theme.HYPE_BORDER).pack(anchor='w', pady=(12, 0))
+        ctk.CTkSwitch(switches, text="★  Besonders gehypt", variable=self.hyped, font=theme.BODY_BOLD,
+                      text_color=theme.GOLD, progress_color=theme.HYPE_BORDER).pack(side='left')
+        self.manual_tba = ctk.BooleanVar(value=False)
+        ctk.CTkSwitch(switches, text="Datum ist nur ein Platzhalter (TBA)", variable=self.manual_tba,
+                      font=theme.BODY_BOLD, text_color=theme.TEXT, progress_color=theme.DANGER_DARK
+                      ).pack(side='left', padx=(28, 0))
 
         self.status = ctk.CTkLabel(self, text="", font=theme.SMALL, text_color=theme.MUTED, anchor='w')
         self.status.pack(fill='x', padx=22, pady=(8, 0))
@@ -157,5 +164,5 @@ class AddDialog(BaseWindow):
                           **theme.button_style('success')).grid(row=0, column=2, rowspan=2, padx=12)
 
     def _add(self, result):
-        self.app.store.add_game(make_game(result, hyped=self.hyped.get()))
+        self.app.store.add_game(make_game(result, hyped=self.hyped.get(), manual_tba=self.manual_tba.get()))
         self.close()

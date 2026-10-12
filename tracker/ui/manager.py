@@ -3,7 +3,7 @@ import customtkinter as ctk
 
 from ..models import is_tba, sort_key_dated, title
 from . import theme
-from .widgets import ScrollFrame, BaseWindow, ConfirmDialog, bind_hover_click, empty_state
+from .widgets import ScrollFrame, BaseWindow, ConfirmDialog, add_context_menu, bind_hover_click, empty_state
 
 COVER = (30, 40)
 
@@ -18,6 +18,7 @@ class ManagerWindow(BaseWindow):
         self.filter = ctk.CTkEntry(bar, placeholder_text="🔎  Filtern…", **theme.entry_style())
         self.filter.pack(side='left', fill='x', expand=True)
         self.filter.bind('<KeyRelease>', lambda e: self.render())
+        add_context_menu(self.filter)
         ctk.CTkButton(bar, text="＋  Hinzufügen", width=140, command=lambda: app.open_add_dialog(),
                       **theme.button_style('success')).pack(side='left', padx=(8, 0))
 

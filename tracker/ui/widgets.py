@@ -206,6 +206,50 @@ class CoverImages:
         return self._images[key]
 
 
+# ---------------------------------------------------------------- Eingabefelder
+def add_context_menu(entry):
+    """Rechtsklick-Menü (Ausschneiden/Kopieren/Einfügen/Alles auswählen) für ein CTkEntry."""
+    inner = getattr(entry, '_entry', entry)   # CTkEntry kapselt ein tk.Entry
+    menu = tkinter.Menu(inner, tearoff=0, bg=theme.SURFACE, fg=theme.TEXT, activebackground=theme.ACCENT,
+                        activeforeground='white', bd=0, font=theme.font(11))
+    menu.add_command(label="Ausschneiden", command=lambda: inner.event_generate('<<Cut>>'))
+    menu.add_command(label="Kopieren", command=lambda: inner.event_generate('<<Copy>>'))
+    def paste():
+        try:
+            text = inner.clipboard_get().strip()   # Zeilenumbrüche aus kopierten Namen weg
+        except tkinter.TclError:
+            return
+        if hasattr(entry, '_deactivate_placeholder'):
+            entry._deactivate_placeholder()       # grauen Platzhaltertext erst entfernen
+        if inner.selection_present():
+            inner.delete('sel.first', 'sel.last')
+        inner.insert('insert', text)
+        inner.focus_set()
+
+    menu.add_command(label="Einfügen", command=paste)
+    menu.add_separator()
+    menu.add_command(label="Alles auswählen", command=lambda: (inner.focus_set(), inner.select_range(0, 'end'),
+                                                               inner.icursor('end')))
+
+    def show(event):
+        inner.focus_set()
+        has_selection = bool(inner.selection_present())
+        try:
+            has_clipboard = bool(inner.clipboard_get())
+        except tkinter.TclError:
+            has_clipboard = False
+        menu.entryconfigure("Ausschneiden", state='normal' if has_selection else 'disabled')
+        menu.entryconfigure("Kopieren", state='normal' if has_selection else 'disabled')
+        menu.entryconfigure("Einfügen", state='normal' if has_clipboard else 'disabled')
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    inner.bind('<Button-3>', show)
+    return entry
+
+
 # ---------------------------------------------------------------- Kleinteile
 def countdown_info(game):
     """(Text, (bg, fg)) für die Countdown-Pill."""

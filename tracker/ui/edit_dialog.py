@@ -8,7 +8,7 @@ import customtkinter as ctk
 from ..trophies import IGNORE
 from ..models import has_playstation, title
 from . import theme
-from .widgets import ScrollFrame, BaseWindow, ConfirmDialog, chip_row, countdown_info, Pill
+from .widgets import ScrollFrame, BaseWindow, ConfirmDialog, add_context_menu, chip_row, countdown_info, Pill
 
 COVER = (96, 128)
 
@@ -117,7 +117,7 @@ class EditDialog(BaseWindow):
         box = ctk.CTkFrame(parent, fg_color='transparent')
         box.grid(row=row, column=col, columnspan=colspan, sticky='nsew', padx=8, pady=6)
         ctk.CTkLabel(box, text=label, font=theme.SMALL_BOLD, text_color=theme.MUTED, anchor='w').pack(fill='x')
-        entry = ctk.CTkEntry(box, **theme.entry_style())
+        entry = add_context_menu(ctk.CTkEntry(box, **theme.entry_style()))
         if value:
             entry.insert(0, str(value))
         entry.pack(fill='x')
