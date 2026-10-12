@@ -44,8 +44,10 @@
   .tabs-wrap { padding-bottom: 10px; }
 
   .viewport { overflow: hidden; }
-  .track { display: flex; width: 200%; transition: transform .3s ease; }
-  .page { width: 50%; flex-shrink: 0; padding: 10px 12px 24px; min-height: 60vh; }
+  /* align-items: flex-start → jede Seite nur so hoch wie ihr Inhalt; die Höhe des Viewports
+     folgt per fitHeight() der aktiven Seite (sonst Leerraum unter der kürzeren Liste) */
+  .track { display: flex; align-items: flex-start; width: 200%; transition: transform .3s ease; }
+  .page { width: 50%; flex-shrink: 0; padding: 10px 12px 24px; }
 
   .game { display: flex; gap: 12px; background: var(--card); border-radius: 12px; padding: 10px;
           margin: 8px 0; border: 2px solid transparent; }
@@ -93,7 +95,7 @@
   </div>
 </header>
 
-<div class="viewport">
+<div class="viewport" id="viewport">
   <div class="track" id="track">
     <div class="page" id="page0"></div>
     <div class="page" id="page1"></div>
@@ -230,7 +232,15 @@ function render() {
   });
   $('page0').innerHTML = html || emptyHtml('Keine Spiele mit Datum');
   $('page1').innerHTML = tba.map(gameHtml).join('') || emptyHtml('Keine Spiele ohne Datum');
+  fitHeight();
 }
+
+// Viewport genau so hoch wie die aktive Seite (both=true: beim Wischen beide Seiten sichtbar lassen)
+function fitHeight(both) {
+  const h = both ? Math.max($('page0').offsetHeight, $('page1').offsetHeight) : $('page' + page).offsetHeight;
+  $('viewport').style.height = h + 'px';
+}
+window.addEventListener('resize', () => fitHeight());
 
 function show(p) {
   const changed = p !== page;
@@ -239,6 +249,7 @@ function show(p) {
   $('tab1').classList.toggle('active', p === 1);
   $('indicator').style.transform = `translateX(${p * 100}%)`;
   $('track').style.transform = `translateX(-${p * 50}%)`;
+  fitHeight();
   if (changed) window.scrollTo({ top: 0 });   // nur beim Seitenwechsel nach oben, nicht beim Zurückfedern
 }
 
@@ -286,7 +297,10 @@ document.addEventListener('touchstart', e => {
 document.addEventListener('touchmove', e => {
   if (!dragging) return;
   const dx = e.changedTouches[0].screenX - startX, dy = e.changedTouches[0].screenY - startY;
-  if (horizontal === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) horizontal = Math.abs(dx) > Math.abs(dy);
+  if (horizontal === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+    horizontal = Math.abs(dx) > Math.abs(dy);
+    if (horizontal) fitHeight(true);   // während des Wischens die andere Seite nicht abschneiden
+  }
   if (!horizontal) return;
   let offset = -page * 50 + (dx / window.innerWidth) * 50;
   if (offset > 0) offset *= 0.3;

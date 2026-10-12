@@ -1,60 +1,73 @@
 """Wiederverwendbare UI-Bausteine."""
+import ctypes
 import logging
 import sys
 import tkinter
 import weakref
-import webbrowser
 
 import customtkinter as ctk
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 from .. import paths
-from ..models import days_until, format_weeks, platform_list, short_platform, title
+from ..models import days_until, format_weeks, platform_list, short_platform
 from . import theme
 
 log = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------- Scrollen
-class ScrollFrame(ctk.CTkScrollableFrame):
-    """CTkScrollableFrame mit leichterem, weichem Mausrad-Scrollen.
+# ---------------------------------------------------------------- Bildschirm
+class _Rect(ctypes.Structure):
+    _fields_ = [('left', ctypes.c_long), ('top', ctypes.c_long), ('right', ctypes.c_long), ('bottom', ctypes.c_long)]
 
-    CTk scrollt unter Windows nur 20 px pro Raste und meldet jede Instanz per bind_all an,
-    ohne sie beim Zerstören wieder abzumelden – bei oft neu gebauten Listen laufen dann bei jeder
-    Raste die Handler aller alten Listen mit. Hier gibt es stattdessen EINEN globalen Handler,
-    der das Ereignis an die Liste unter dem Mauszeiger weitergibt.
+
+def work_area(widget):
+    """Freier Bildschirmbereich des Hauptmonitors ohne Taskleiste (echte Pixel)."""
+    rect = _Rect()
+    try:
+        if ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):  # SPI_GETWORKAREA
+            return rect.left, rect.top, rect.right, rect.bottom
+    except (AttributeError, OSError):
+        pass
+    return 0, 0, widget.winfo_screenwidth(), widget.winfo_screenheight() - 48
+
+
+# ---------------------------------------------------------------- Scrollen
+_WHEEL_TARGETS = weakref.WeakValueDictionary()   # Canvas-Pfad → Objekt mit _on_wheel()
+
+
+def _wheel_dispatch(event):
+    """Einziger globaler Mausrad-Handler: gibt das Ereignis an die scrollbare Fläche unter dem Zeiger."""
+    widget = event.widget
+    while widget is not None and not isinstance(widget, str):
+        target = _WHEEL_TARGETS.get(str(widget))
+        if target is not None:
+            target._on_wheel(event)
+            return
+        widget = getattr(widget, 'master', None)
+
+
+class SmoothWheel:
+    """Weiches Mausrad-Scrollen für ein Canvas (yscrollincrement=1 → 1 unit = 1 px).
+
+    Nutzer setzen self._wheel_canvas und rufen _register_wheel() auf.
     """
 
     STEP = 70          # Pixel pro Mausrad-Raste (bei 100 % Skalierung)
-    _frames = weakref.WeakValueDictionary()   # Canvas-Pfad → ScrollFrame
 
-    def __init__(self, master, **kwargs):
-        super().__init__(master, **kwargs)
+    def _register_wheel(self, canvas):
+        self._wheel_canvas = canvas
         self._pending = 0.0
         self._animating = False
-        if sys.platform.startswith('win'):
-            # CTk-eigene globale Bindings ersetzen (sie gelten für alle Instanzen)
-            for seq in ('<KeyPress-Shift_L>', '<KeyPress-Shift_R>',
-                        '<KeyRelease-Shift_L>', '<KeyRelease-Shift_R>'):
-                self.unbind_all(seq)
-            ScrollFrame._frames[str(self._parent_canvas)] = self
-            # ohne add → ersetzt alle bisherigen Handler (auch den gerade von CTk angelegten)
-            self.bind_all('<MouseWheel>', ScrollFrame._dispatch)
-
-    @classmethod
-    def _dispatch(cls, event):
-        widget = event.widget
-        while widget is not None and not isinstance(widget, str):
-            frame = cls._frames.get(str(widget))
-            if frame is not None:
-                frame._on_wheel(event)
-                return
-            widget = getattr(widget, 'master', None)
+        canvas.configure(yscrollincrement=1)
+        _WHEEL_TARGETS[str(canvas)] = self
+        # ohne add → ersetzt alle bisherigen Handler (auch die von CTk angelegten)
+        canvas.bind_all('<MouseWheel>', _wheel_dispatch)
 
     def _on_wheel(self, event):
-        if not self.winfo_exists() or self._parent_canvas.yview() == (0.0, 1.0):
+        canvas = self._wheel_canvas
+        if not canvas.winfo_exists() or canvas.yview() == (0.0, 1.0):
             return
-        scale = ctk.ScalingTracker.get_widget_scaling(self)
+        scale = ctk.ScalingTracker.get_widget_scaling(canvas)
         self._pending += -event.delta / 120 * self.STEP * scale
         if not self._animating:
             self._animating = True
@@ -62,22 +75,40 @@ class ScrollFrame(ctk.CTkScrollableFrame):
 
     def _animate(self):
         """Gleitet den Rest in kleinen Schritten ab (weicher als ein harter Sprung)."""
-        if not self.winfo_exists() or abs(self._pending) < 1:
+        canvas = self._wheel_canvas
+        if not canvas.winfo_exists() or abs(self._pending) < 1:
             self._pending = 0.0
             self._animating = False
             return
         step = int(self._pending * 0.35) or (1 if self._pending > 0 else -1)
-        self._parent_canvas.yview_scroll(step, 'units')   # 1 unit = 1 px (CTk-Einstellung unter Windows)
+        canvas.yview_scroll(step, 'units')
         self._pending -= step
-        self.after(10, self._animate)
+        canvas.after(10, self._animate)
+
+
+class ScrollFrame(SmoothWheel, ctk.CTkScrollableFrame):
+    """CTkScrollableFrame mit leichterem, weichem Mausrad-Scrollen.
+
+    CTk scrollt unter Windows nur 20 px pro Raste und meldet jede Instanz per bind_all an,
+    ohne sie beim Zerstören wieder abzumelden. Hier gibt es stattdessen EINEN globalen Handler.
+    """
+
+    def __init__(self, master, **kwargs):
+        super().__init__(master, **kwargs)
+        if sys.platform.startswith('win'):
+            for seq in ('<KeyPress-Shift_L>', '<KeyPress-Shift_R>',
+                        '<KeyRelease-Shift_L>', '<KeyRelease-Shift_R>'):
+                self.unbind_all(seq)
+            self._register_wheel(self._parent_canvas)
 
 
 # ---------------------------------------------------------------- Cover-Bilder
 class CoverImages:
-    """Erzeugt CTkImages (abgerundet) aus dem Cover-Cache; Platzhalter, solange nichts da ist.
+    """Erzeugt abgerundete Cover-Bilder aus dem Cover-Cache; Platzhalter, solange nichts da ist.
 
-    Muss im UI-Thread benutzt werden. Fehlende Cover werden asynchron geladen und
-    über `on_loaded(image_id)` gemeldet (vom App-Objekt in den UI-Thread geleitet).
+    get() liefert CTkImages (für CTk-Widgets), get_tk() PhotoImages in echten Pixeln (für die
+    gezeichnete Spieleliste). Muss im UI-Thread benutzt werden. Fehlende Cover werden asynchron
+    geladen und über on_ready gemeldet (vom App-Objekt in den UI-Thread geleitet).
     """
 
     def __init__(self, cache, call_in_ui):
@@ -86,26 +117,50 @@ class CoverImages:
         self._images = {}
         self._waiting = {}
 
-    def get(self, image_id, size, name='', on_ready=None):
-        key = (image_id, size)
-        if image_id and key in self._images:
-            return self._images[key]
-
+    def _open(self, image_id, on_ready):
+        """PIL-Bild des Covers oder None (dann wird es im Hintergrund geladen)."""
         path = self.cache.cached(image_id)
         if path:
             try:
-                img = self._make(Image.open(path), size)
-                self._images[key] = img
-                return img
+                return Image.open(path)
             except Exception as e:
                 log.warning("Cover %s defekt: %s", image_id, e)
-
         if image_id and on_ready:
             waiting = self._waiting.setdefault(image_id, [])
             waiting.append(on_ready)
             del waiting[:-20]  # alte Callbacks (zerstörte Widgets) nicht ewig sammeln
             self.cache.fetch(image_id, lambda _p, i=image_id: self.call_in_ui(self._loaded, i))
-        return self.placeholder(name, size)
+        return None
+
+    def get(self, image_id, size, name='', on_ready=None):
+        key = (image_id, size)
+        if image_id and key in self._images:
+            return self._images[key]
+        pil = self._open(image_id, on_ready)
+        if pil is None:
+            return self.placeholder(name, size)
+        img = self._make(pil, size)
+        self._images[key] = img
+        return img
+
+    def get_tk(self, image_id, size_px, name='', on_ready=None):
+        """ImageTk.PhotoImage in genau size_px (echte Pixel), mit transparenten runden Ecken."""
+        key = ('tk', image_id, size_px)
+        if image_id and key in self._images:
+            return self._images[key]
+        pil = self._open(image_id, on_ready)
+        is_placeholder = pil is None
+        if is_placeholder:
+            letter = name[:1].upper() if name else '?'
+            key = ('tk', '__ph__' + letter, size_px)
+            if key in self._images:
+                return self._images[key]
+            pil = self._placeholder_pil(letter, size_px)
+        radius = max(4, size_px[0] // 6)
+        rounded = self._rounded(pil, size_px, radius).resize(size_px, Image.LANCZOS)
+        img = ImageTk.PhotoImage(rounded)
+        self._images[key] = img
+        return img
 
     def _loaded(self, image_id):
         for callback in self._waiting.pop(image_id, []):
@@ -128,10 +183,8 @@ class CoverImages:
     def _make(self, pil_img, size):
         return ctk.CTkImage(dark_image=self._rounded(pil_img, size), size=size)
 
-    def placeholder(self, name, size):
-        key = ('__ph__' + (name[:1].upper() if name else '?'), size)
-        if key in self._images:
-            return self._images[key]
+    @staticmethod
+    def _placeholder_pil(letter, size):
         w, h = size[0] * 2, size[1] * 2
         img = Image.new('RGB', (w, h), theme.CARD_HOVER)
         draw = ImageDraw.Draw(img)
@@ -142,11 +195,15 @@ class CoverImages:
             fnt = ImageFont.truetype('segoeuib.ttf', int(w * 0.45))
         except OSError:
             fnt = ImageFont.load_default()
-        letter = key[0][-1]
         draw.text((w / 2, h / 2), letter, font=fnt, fill=(140, 150, 185), anchor='mm')
-        result = self._make(img, size)
-        self._images[key] = result
-        return result
+        return img
+
+    def placeholder(self, name, size):
+        letter = name[:1].upper() if name else '?'
+        key = ('__ph__' + letter, size)
+        if key not in self._images:
+            self._images[key] = self._make(self._placeholder_pil(letter, size), size)
+        return self._images[key]
 
 
 # ---------------------------------------------------------------- Kleinteile
@@ -194,15 +251,6 @@ def chip_row(master, platforms_str, bg):
     return row
 
 
-class GapSeparator(ctk.CTkFrame):
-    def __init__(self, master, days):
-        super().__init__(master, fg_color='transparent', height=18)
-        ctk.CTkFrame(self, fg_color=theme.BORDER, height=1).pack(side='left', fill='x', expand=True, padx=(8, 6))
-        ctk.CTkLabel(self, text=f"{days} {'Tag' if days == 1 else 'Tage'}", font=theme.TINY,
-                     text_color=theme.SUBTLE, height=16).pack(side='left')
-        ctk.CTkFrame(self, fg_color=theme.BORDER, height=1).pack(side='left', fill='x', expand=True, padx=(6, 8))
-
-
 def _is_descendant(widget, ancestor):
     while widget is not None:
         if widget == ancestor:
@@ -239,95 +287,52 @@ def bind_hover_click(container, on_enter, on_leave, on_click, exclude=()):
     bind_all(container)
 
 
-# ---------------------------------------------------------------- Spielkarte
-class GameCard(ctk.CTkFrame):
-    COVER_SIZE = (46, 62)
-
-    def __init__(self, master, game, covers, on_click, on_link=None):
-        hyped = game.get('hyped')
-        self.bg = theme.HYPE_BG if hyped else theme.CARD
-        self.bg_hover = theme.HYPE_HOVER if hyped else theme.CARD_HOVER
-        super().__init__(master, fg_color=self.bg, corner_radius=theme.RADIUS,
-                         border_width=2 if hyped else 0, border_color=theme.HYPE_BORDER, cursor='hand2')
-        self.game = game
-
-        self.grid_columnconfigure(1, weight=1)
-        name = title(game)
-
-        self.cover = ctk.CTkLabel(self, text='', image=covers.get(game.get('cover_id'), self.COVER_SIZE, name,
-                                                                  on_ready=self._reload_cover))
-        self.cover.grid(row=0, column=0, rowspan=3, padx=(10, 10), pady=10, sticky='n')
-        self._covers = covers
-
-        # Zeile 1: Name + Badges
-        top = ctk.CTkFrame(self, fg_color='transparent')
-        top.grid(row=0, column=1, sticky='ew', pady=(9, 0), padx=(0, 10))
-        ctk.CTkLabel(top, text=('★ ' if hyped else '') + name, font=theme.font(13, 'bold'), anchor='w',
-                     text_color=theme.GOLD if hyped else theme.TEXT, wraplength=300, justify='left'
-                     ).pack(side='left', fill='x', expand=True)
-        trophy_btn = None
-        if game.get('psn_trophy_count') and game.get('exophase_url'):
-            # Klick öffnet die Trophäenliste auf Exophase (statt den Bearbeiten-Dialog)
-            trophy_btn = ctk.CTkButton(top, text=f"🏆 {game['psn_trophy_count']}", width=46, height=22,
-                                       corner_radius=6, font=theme.font(10, 'bold'), fg_color='#1b2f4d',
-                                       hover_color='#27446e', text_color=theme.TROPHY,
-                                       command=lambda: self._open_link(game['exophase_url'], on_link))
-            trophy_btn.pack(side='right', padx=(4, 0))
-        elif game.get('psn_trophy_count'):
-            Pill(top, f"🏆 {game['psn_trophy_count']}", ('#1b2f4d', theme.TROPHY), font=theme.TINY).pack(side='right', padx=(4, 0))
-        if game.get('manual_tba'):
-            Pill(top, "TBA", (theme.BORDER, theme.MUTED), font=theme.TINY).pack(side='right', padx=(4, 0))
-
-        # Zeile 2: Plattformen
-        chips = chip_row(self, game.get('platforms'), self.bg)
-        if chips:
-            chips.grid(row=1, column=1, sticky='w', pady=(3, 0))
-
-        # Zeile 3: Countdown
-        text, colors = countdown_info(game)
-        Pill(self, text, colors).grid(row=2, column=1, sticky='w', pady=(5, 10))
-
-        bind_hover_click(self, lambda: self.configure(fg_color=self.bg_hover),
-                         lambda: self.configure(fg_color=self.bg), lambda: on_click(game['uid']),
-                         exclude=(trophy_btn,) if trophy_btn else ())
-
-    @staticmethod
-    def _open_link(url, on_link):
-        webbrowser.open(url)
-        if on_link:
-            on_link()   # z.B. Flyout schließen
-
-    def _reload_cover(self):
-        if self.winfo_exists():
-            self.cover.configure(image=self._covers.get(self.game.get('cover_id'), self.COVER_SIZE, title(self.game)))
-
-
 # ---------------------------------------------------------------- Fenster-Basis
 class BaseWindow(ctk.CTkToplevel):
-    """Zentriertes Fenster mit App-Icon und ESC zum Schließen."""
+    """Zentriertes Fenster mit App-Icon und ESC zum Schließen.
 
-    def __init__(self, app, title_text, width, height, on_close=None, resizable=True):
+    Wird erst sichtbar, wenn der Inhalt fertig aufgebaut ist (kein weißes Aufblitzen):
+    CTkToplevel zeigt neue Fenster sonst schon nach 5 ms an. maximized=True öffnet maximiert.
+    """
+
+    def __init__(self, app, title_text, width, height, on_close=None, resizable=True, maximized=False):
         super().__init__(app.root, fg_color=theme.BG)
+        self.withdraw()   # CTk merkt sich das und zeigt das Fenster nach dem Titelbalken-Trick nicht wieder an
         self.app = app
         self._on_close = on_close
+        self._maximized = maximized
         self.title(title_text)
         self.resizable(resizable, resizable)
-        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        height = min(height, sh - 80)
-        self.geometry(f"{width}x{height}+{(sw - width) // 2}+{max(20, (sh - height) // 2 - 20)}")
+        icon = paths.resource('icon.ico')
+        if icon:
+            self.iconbitmap(icon)   # sofort setzen → CTk setzt kein eigenes Icon mehr
+        self._center(width, height)
         self.minsize(min(width, 420), min(height, 300))
         self.protocol('WM_DELETE_WINDOW', self.close)
         self.bind('<Escape>', lambda e: self.close())
-        icon = paths.resource('icon.ico')
-        if icon:
-            # CTkToplevel setzt sein eigenes Icon verzögert – danach überschreiben
-            self.after(250, lambda: self.winfo_exists() and self.iconbitmap(icon))
-        self.after(50, self._bring_to_front)
+        self.after_idle(self._reveal)   # läuft erst, wenn die Unterklasse ihren Inhalt gebaut hat
 
-    def _bring_to_front(self):
-        if self.winfo_exists():
-            self.lift()
-            self.focus_force()
+    def _center(self, width, height):
+        """Mittig im freien Bildschirmbereich. CTk skaliert bei geometry() auch die Position –
+        daher Größe über CTk, Position unskaliert in echten Pixeln."""
+        scale = ctk.ScalingTracker.get_window_scaling(self)
+        left, top, right, bottom = work_area(self)
+        height = min(height, int((bottom - top) / scale) - 60)
+        self.geometry(f"{width}x{height}")
+        x = left + (right - left - int(width * scale)) // 2
+        y = top + max(10, (bottom - top - int(height * scale)) // 2)
+        tkinter.Wm.wm_geometry(self, f"+{x}+{y}")
+
+    def _reveal(self):
+        if not self.winfo_exists():
+            return
+        self.update_idletasks()
+        if self._maximized:
+            self.state('zoomed')
+        else:
+            self.deiconify()
+        self.lift()
+        self.focus_force()
 
     def close(self):
         callback, self._on_close = self._on_close, None
@@ -372,7 +377,11 @@ class ConfirmDialog(BaseWindow):
         ctk.CTkButton(buttons, text="Abbrechen", command=self.close, width=110,
                       **theme.button_style('ghost')).pack(side='right', padx=(0, 8))
         self.bind('<Return>', lambda e: self._confirm())
-        self.after(100, lambda: self.winfo_exists() and self.grab_set())
+
+    def _reveal(self):
+        super()._reveal()
+        if self.winfo_exists():
+            self.grab_set()   # modal – geht erst, wenn das Fenster sichtbar ist
 
     def _confirm(self):
         callback = self.on_confirm

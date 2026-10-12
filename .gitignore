@@ -22,3 +22,6 @@ __pycache__/
 
 # Design source files
 *.psd
+
+# Lokale Werkzeug-/Testdateien
+.claude/

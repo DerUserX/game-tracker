@@ -7,30 +7,17 @@ import ctypes
 import json
 import time
 import tkinter
+import webbrowser
 from datetime import date, datetime
 
 import customtkinter as ctk
 
-from ..models import days_between, is_tba, sort_key_dated, sort_key_tba
+from ..models import is_tba, sort_key_dated, sort_key_tba
 from . import theme
-from .widgets import ScrollFrame, GameCard, GapSeparator, empty_state
+from .gamelist import GameList
+from .widgets import work_area
 
 WIDTH, HEIGHT = 480, 620
-
-
-class _Rect(ctypes.Structure):
-    _fields_ = [('left', ctypes.c_long), ('top', ctypes.c_long), ('right', ctypes.c_long), ('bottom', ctypes.c_long)]
-
-
-def work_area(widget):
-    """Freier Bildschirmbereich des Hauptmonitors ohne Taskleiste (echte Pixel)."""
-    rect = _Rect()
-    try:
-        if ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):  # SPI_GETWORKAREA
-            return rect.left, rect.top, rect.right, rect.bottom
-    except (AttributeError, OSError):
-        pass
-    return 0, 0, widget.winfo_screenwidth(), widget.winfo_screenheight() - 48
 
 
 class Popup(ctk.CTkToplevel):
@@ -50,9 +37,8 @@ class Popup(ctk.CTkToplevel):
         self._build_header()
         self._build_tabs()
         self._build_footer()
-        self.body = ctk.CTkFrame(self.shell, fg_color='transparent')
-        self.body.pack(fill='both', expand=True)
-        self.lists = [None, None]
+        self.list = GameList(self.shell, app, on_open=self._open_game, on_link=self._open_link)
+        self.list.pack(fill='both', expand=True)
         self._data = ([], [])
         self._signature = None
         self.closed_at = 0.0
@@ -221,48 +207,26 @@ class Popup(ctk.CTkToplevel):
         if signature != self._signature:
             self._signature = signature
             self._data = (dated, tba)
-            for i, lst in enumerate(self.lists):
-                if lst is not None:
-                    lst.destroy()
-                    self.lists[i] = None
             self._show_page()
 
     def _show_page(self):
-        """Zeigt die aktive Seite; baut sie beim ersten Bedarf."""
-        if self.lists[self.page] is None:
-            dated, tba = self._data
-            self.lists[self.page] = (self._build_list(dated, with_gaps=True, empty="Keine Spiele mit Datum")
-                                     if self.page == 0 else
-                                     self._build_list(tba, with_gaps=False, empty="Keine Spiele ohne Datum"))
-        self.lists[self.page].pack(fill='both', expand=True)
-
-    def _build_list(self, games, with_gaps, empty):
-        lst = ScrollFrame(self.body, fg_color='transparent', scrollbar_button_color=theme.BORDER,
-                                     scrollbar_button_hover_color=theme.SUBTLE)
-        if not games:
-            empty_state(lst, "📭", empty, "Klicke auf ＋ um Spiele hinzuzufügen")
-            return lst
-        for i, game in enumerate(games):
-            if with_gaps and i > 0:
-                gap = days_between(games[i - 1], game)
-                if gap:
-                    GapSeparator(lst, gap).pack(fill='x', pady=1)
-            GameCard(lst, game, self.app.covers, self._open_game,
-                     on_link=self.close).pack(fill='x', padx=(10, 4), pady=4)
-        return lst
+        games = self._data[self.page]
+        self.list.set_games(games, with_gaps=self.page == 0,
+                            empty_text="Keine Spiele mit Datum" if self.page == 0 else "Keine Spiele ohne Datum")
 
     def _on_tab(self, value):
         new_page = 0 if value.startswith("📅") else 1
-        if new_page == self.page:
-            return
-        if self.lists[self.page] is not None:
-            self.lists[self.page].pack_forget()
-        self.page = new_page
-        self._show_page()
+        if new_page != self.page:
+            self.page = new_page
+            self._show_page()
 
     # ------------------------------------------------------------- Aktionen
     def _open_game(self, uid):
         self.app.open_edit_dialog(uid, from_popup=True)
+
+    def _open_link(self, url):
+        webbrowser.open(url)
+        self.close()
 
     def _refresh(self):
         self.refresh_btn.configure(state='disabled')

@@ -17,7 +17,7 @@ class EditDialog(BaseWindow):
     def __init__(self, app, uid, on_close=None):
         self.uid = uid
         game = app.store.find(uid)
-        super().__init__(app, f"Bearbeiten: {title(game)}", 720, 720, on_close=on_close)
+        super().__init__(app, f"Bearbeiten: {title(game)}", 720, 720, on_close=on_close, maximized=True)
         self.game = dict(game)
 
         # --- Kopf mit Cover ---
@@ -107,8 +107,6 @@ class EditDialog(BaseWindow):
         self.error.grid(row=4, column=0, columnspan=2, sticky='ew', padx=8)
 
         self.bind('<Return>', lambda e: self.save())
-        # maximiert öffnen (verzögert, sonst überschreibt CTk den Zustand beim Aufbau)
-        self.after(80, lambda: self.winfo_exists() and self.state('zoomed'))
 
     def _set_cover(self):
         if self.winfo_exists():
