@@ -8,7 +8,7 @@ Die App aktualisiert sich selbst aus den GitHub-Releases dieses Repos.
 
 1. Einen Ordner anlegen, z.B. `C:\Tools\GameTracker\`.
 2. `GameTracker.exe` aus dem **neuesten Release** dieses Repos herunterladen:
-   https://github.com/DerUserX/game-tracker/releases/latest
+   https://github.com/demuHB/game-tracker/releases/latest
 3. Diese Dateien von der alten Installation **neben die exe** legen:
    `games.json`, `config.json`, `waitlist.json`, `notifications.json`.
    **`config.json` muss die Zugangsdaten enthalten** (`igdb_client_id`, `igdb_client_secret`, `github_token`).
@@ -32,7 +32,7 @@ So entsteht eine neue Version: Ein Push auf `main`, der App-Dateien betrifft (`t
 
 ## Handy-Ansicht (PWA)
 
-https://deruserx.github.io/game-tracker/ – wird aus dem Ordner `docs/` per GitHub Pages ausgeliefert
+https://demuhb.github.io/game-tracker/ – wird aus dem Ordner `docs/` per GitHub Pages ausgeliefert
 und ist etwa 1 Minute nach jedem Push aktuell.
 Die Spieleliste kommt aus dem Gist, das die Desktop-App bei jeder Änderung aktualisiert.
 

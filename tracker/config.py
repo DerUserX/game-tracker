@@ -29,7 +29,7 @@ GIST_ID = '6223c6e0ef9f2d6f85060d161a4650e1'
 GITHUB_TOKEN = _secrets.get('github_token', '')
 
 # Repo, aus dessen Releases sich die App aktualisiert
-UPDATE_REPO = 'DerUserX/game-tracker'
+UPDATE_REPO = 'demuHB/game-tracker'
 UPDATE_URL = os.environ.get('GAMETRACKER_UPDATE_URL') or f'https://api.github.com/repos/{UPDATE_REPO}/releases/latest'
 UPDATE_INTERVAL = 6 * 3600
 
