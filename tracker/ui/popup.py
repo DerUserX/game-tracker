@@ -12,6 +12,7 @@ from datetime import date, datetime
 
 import customtkinter as ctk
 
+from .. import config
 from ..models import is_tba, sort_key_dated, sort_key_tba
 from . import theme
 from .gamelist import GameList
@@ -196,7 +197,7 @@ class Popup(ctk.CTkToplevel):
             text = "Aktualisiere…"
         elif self.app.updater.last_error:
             text = "⚠️ Update fehlgeschlagen – offline?"
-        self.footer_label.configure(text=text)
+        self.footer_label.configure(text=f"v{config.APP_VERSION}  ·  {text}")
         if store.waitlist:
             self.waitlist_link.configure(text=f"📋 {len(store.waitlist)} auf Warteliste")
             self.waitlist_link.pack(side='right', padx=14)

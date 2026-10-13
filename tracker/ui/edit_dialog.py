@@ -38,8 +38,8 @@ class EditDialog(BaseWindow):
         chips = chip_row(info, self.game.get('platforms'), theme.SURFACE)
         if chips:
             chips.pack(anchor='w', pady=(8, 0))
-        text, colors = countdown_info(self.game)
-        Pill(info, text, colors).pack(anchor='w', pady=(8, 0))
+        text, colors, outline = countdown_info(self.game)
+        Pill(info, text, colors, outline=outline).pack(anchor='w', pady=(8, 0))
         if self.game.get('psn_trophy_count'):
             Pill(info, f"🏆 {self.game['psn_trophy_count']} Trophäen",
                  ('#1b2f4d', theme.TROPHY)).pack(anchor='w', pady=(6, 0))

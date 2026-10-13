@@ -29,13 +29,13 @@ HYPE_BORDER = '#d9a520'
 TROPHY = '#5aa9ff'
 UNREAD_BG = '#1f3340'
 
-# Countdown-Stufen: (Hintergrund, Text)
-PILL_TODAY = ('#1f4d33', '#5ee08f')
-PILL_WEEK = ('#4d2323', '#ff7b72')
-PILL_MONTH = ('#33275a', '#c3a6ff')   # violett – Gold gehört nur den gehypten Spielen
-PILL_LATER = ('#2a3045', '#b4bcd6')   # neutral grau
-PILL_PAST = ('#2a3048', '#9aa3c0')
-PILL_NONE = ('#2a3048', '#8f97b5')
+# Countdown-Pill: Farbe immer passend zur Karte (Hintergrund, Text) …
+PILL_HYPE = ('#4a3714', '#f5b14a')       # gold auf gold
+PILL_STANDARD = ('#1d3352', '#6cb0ff')   # blau auf blau
+# … die Dringlichkeit zeigt nur die Kontur
+OUTLINE_TODAY = '#5ee08f'                # heute: grün
+OUTLINE_SOON = '#ff8a1f'                 # bis 7 Tage: orange
+SOON_DAYS = 7
 
 FONT_FAMILY = 'Segoe UI'
 EMOJI_FAMILY = 'Segoe UI Emoji'

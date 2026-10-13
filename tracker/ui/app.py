@@ -170,7 +170,8 @@ class TrackerApp:
         if self.icon is None:
             return
         unread = self.store.unread_count()
-        self.icon.title = config.APP_NAME + (f" – {unread} neue Benachrichtigung(en)" if unread else "")
+        title = f"{config.APP_NAME} v{config.APP_VERSION}"
+        self.icon.title = title + (f" – {unread} neue Benachrichtigung(en)" if unread else "")
 
     def _start_tray(self):
         item = pystray.MenuItem
@@ -181,6 +182,7 @@ class TrackerApp:
             item('Warteliste', lambda: self.call(self.open_waitlist)),
             item('Benachrichtigungen', lambda: self.call(self.open_notifications)),
             item('Jetzt aktualisieren', lambda: self.call(self.start_update)),
+            item('Nach Updates suchen', lambda: self.call(self.self_updater.check_manual)),
             pystray.Menu.SEPARATOR,
             item('Beenden', lambda: self.call(self.quit)),
         )
@@ -192,6 +194,14 @@ class TrackerApp:
         if self.icon is not None:
             self.icon.stop()
         self.root.quit()
+
+    def notify_tray(self, text):
+        """Windows-Benachrichtigung über das Tray-Icon (aus jedem Thread aufrufbar)."""
+        try:
+            if self.icon is not None:
+                self.icon.notify(text, config.APP_NAME)
+        except Exception:
+            log.info("Tray-Benachrichtigung nicht möglich: %s", text)
 
     def _startup_notices(self, updated_to):
         if updated_to:

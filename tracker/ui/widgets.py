@@ -292,30 +292,37 @@ def add_context_menu(entry):
 
 # ---------------------------------------------------------------- Kleinteile
 def countdown_info(game):
-    """(Text, (bg, fg)) für die Countdown-Pill."""
+    """(Text, (bg, fg), Kontur) für die Countdown-Pill.
+
+    Farben immer passend zur Karte (Hype gold, sonst blau); die Kontur zeigt die Dringlichkeit:
+    heute grün, bis 7 Tage orange, sonst keine (None).
+    """
+    colors = theme.PILL_HYPE if game.get('hyped') else theme.PILL_STANDARD
     if game.get('manual_tba'):
         last = game.get('last_known_date')
-        return (f"Platzhalter ignoriert: {last}" if last else "Datum unbekannt"), theme.PILL_NONE
+        return (f"Platzhalter ignoriert: {last}" if last else "Datum unbekannt"), colors, None
     days = days_until(game.get('release_date')) if game.get('release_date') else None
     if days is None:
-        return "Datum unbekannt", theme.PILL_NONE
+        return "Datum unbekannt", colors, None
     date = game['release_date']
     if days < 0:
-        return f"Erschienen vor {-days} {'Tag' if days == -1 else 'Tagen'} · {date}", theme.PILL_PAST
+        return f"Erschienen vor {-days} {'Tag' if days == -1 else 'Tagen'} · {date}", colors, None
     if days == 0:
-        return f"🎉 Heute! · {date}", theme.PILL_TODAY
-    if days < 7:
-        return f"🔥 Noch {days} {'Tag' if days == 1 else 'Tage'} · {date}", theme.PILL_WEEK
-    if days < 30:
-        return f"Noch {days} Tage ({format_weeks(days)}) · {date}", theme.PILL_MONTH
-    return f"Noch {days} Tage ({format_weeks(days)}) · {date}", theme.PILL_LATER
+        return f"🎉 Heute! · {date}", colors, theme.OUTLINE_TODAY
+    if days <= theme.SOON_DAYS:
+        return f"🔥 Noch {days} {'Tag' if days == 1 else 'Tage'} · {date}", colors, theme.OUTLINE_SOON
+    return f"Noch {days} Tage ({format_weeks(days)}) · {date}", colors, None
 
 
-class Pill(ctk.CTkLabel):
-    def __init__(self, master, text, colors, font=theme.SMALL_BOLD, **kw):
+class Pill(ctk.CTkFrame):
+    """Kleiner abgerundeter Kasten mit Text; optional farbige Kontur."""
+
+    def __init__(self, master, text, colors, font=theme.SMALL_BOLD, outline=None, **kw):
         bg, fg = colors
-        super().__init__(master, text=text, fg_color=bg, text_color=fg, corner_radius=6,
-                         font=font, height=22, padx=8, **kw)
+        super().__init__(master, fg_color=bg, corner_radius=7, border_width=2 if outline else 0,
+                         border_color=outline or bg, **kw)
+        ctk.CTkLabel(self, text=text, fg_color='transparent', text_color=fg, font=font, height=18 if outline else 22,
+                     padx=6).pack(padx=2 if outline else 2, pady=2 if outline else 0)
 
 
 def chip_row(master, platforms_str, bg):

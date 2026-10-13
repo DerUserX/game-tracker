@@ -96,12 +96,14 @@ class GameList(SmoothWheel, tkinter.Frame):
             self._shapes[key] = ImageTk.PhotoImage(img.resize((w, h), Image.LANCZOS))
         return self._shapes[key]
 
-    def pill(self, x, y, text, colors, font, tags, pad_x=8, height=22, radius=6):
-        """Zeichnet eine Pill ab (x, y) links oben; gibt ihre Breite zurück."""
+    def pill(self, x, y, text, colors, font, tags, pad_x=8, height=22, radius=6, outline=None):
+        """Zeichnet eine Pill ab (x, y) links oben; gibt ihre Breite zurück. outline = Farbe der Kontur."""
         bg, fg = colors
         w = font.measure(text) + self.px(pad_x) * 2
         h = self.px(height)
-        self.canvas.create_image(x, y, image=self.shape(w, h, self.px(radius), bg), anchor='nw', tags=tags)
+        image = (self.shape(w, h, self.px(radius), bg, outline, max(2, self.px(2))) if outline
+                 else self.shape(w, h, self.px(radius), bg))
+        self.canvas.create_image(x, y, image=image, anchor='nw', tags=tags)
         self.canvas.create_text(x + w // 2, y + h // 2, text=text, fill=fg, font=font, tags=tags)
         return w
 
@@ -230,8 +232,8 @@ class GameList(SmoothWheel, tkinter.Frame):
             line_y += self.px(2)
 
         # Zeile 3: Countdown
-        text, colors = countdown_info(game)
-        self.pill(text_x, line_y, text, colors, self.font(11, 'bold'), (tag,))
+        text, colors, outline = countdown_info(game)
+        self.pill(text_x, line_y, text, colors, self.font(11, 'bold'), (tag,), outline=outline)
         content_bottom = line_y + self.px(22) + pad
 
         bottom = max(y + pad + cover_h + pad, content_bottom)

@@ -52,10 +52,19 @@ def cleanup_old():
                 time.sleep(0.5)
 
 
+# Wartezeiten nach einer fehlgeschlagenen Prüfung (Sekunden); per Env für Tests überschreibbar
+RETRY_DELAYS = [int(x) for x in os.environ.get('GAMETRACKER_UPDATE_RETRY', '120,300,900,1800').split(',')]
+FIRST_DELAY = int(os.environ.get('GAMETRACKER_UPDATE_FIRST_DELAY', '10'))
+MAX_WAIT_FOR_DIALOGS = 10   # Minuten, danach Hinweis „Update bereit“
+
+
 class SelfUpdater:
     def __init__(self, app):
         self.app = app
         self.pending_version = None
+        self._check_lock = threading.Lock()
+        self._wait_minutes = 0
+        self.status = {'last_check': None, 'last_error': '', 'latest': ''}
 
     @property
     def enabled(self):
@@ -68,13 +77,40 @@ class SelfUpdater:
         threading.Thread(target=self._loop, daemon=True, name='selfupdate').start()
 
     def _loop(self):
-        time.sleep(30)
+        """Prüft kurz nach dem Start, danach alle 6 h. Nach Fehlern schnell erneut (2, 5, 15, 30 Min. …)."""
+        time.sleep(FIRST_DELAY)
+        failures = 0
         while True:
             try:
                 self.check_and_download()
+                failures = 0
+                delay = config.UPDATE_INTERVAL
             except Exception as e:
-                log.warning("Update-Prüfung fehlgeschlagen: %s", e)
-            time.sleep(config.UPDATE_INTERVAL)
+                delay = RETRY_DELAYS[min(failures, len(RETRY_DELAYS) - 1)]
+                failures += 1
+                log.warning("Update-Prüfung fehlgeschlagen (%s) – nächster Versuch in %d s", e, delay)
+            time.sleep(delay)
+
+    def check_manual(self):
+        """Vom Tray-Menü: sofort prüfen und das Ergebnis als Windows-Benachrichtigung melden."""
+        if not self.enabled:
+            self.app.notify_tray(f"Entwicklungsversion {config.APP_VERSION} – kein automatisches Update.")
+            return
+
+        def work():
+            try:
+                result = self.check_and_download()
+            except Exception as e:
+                self.app.notify_tray(f"Update-Prüfung fehlgeschlagen: {e}")
+                return
+            if result == 'latest':
+                self.app.notify_tray(f"Du hast die neueste Version ({config.APP_VERSION}).")
+            elif result == 'downloaded':
+                self.app.notify_tray(f"Update {self.pending_version} wird installiert – die App startet gleich neu.")
+            elif result == 'pending':
+                self.app.notify_tray(f"Update {self.pending_version} ist bereit und wird gleich installiert.")
+
+        threading.Thread(target=work, daemon=True, name='selfupdate-manual').start()
 
     # --- Download ---
     @staticmethod
@@ -84,47 +120,81 @@ class SelfUpdater:
             import json
             with open(url, encoding='utf-8') as f:
                 return json.load(f)
-        response = requests.get(url, headers={'Accept': 'application/vnd.github+json'}, timeout=15)
+        headers = {'Accept': 'application/vnd.github+json'}
+        if config.GITHUB_TOKEN:
+            # mit Token: 5000 statt 60 Anfragen/Std. (das 60er-Limit teilen sich alle Geräte am Anschluss)
+            response = requests.get(url, headers={**headers, 'Authorization': f'Bearer {config.GITHUB_TOKEN}'},
+                                    timeout=15)
+            if response.status_code not in (401, 403):
+                response.raise_for_status()
+                return response.json()
+            log.warning("Update-Abfrage mit Token abgelehnt (%s) – versuche ohne", response.status_code)
+        response = requests.get(url, headers=headers, timeout=15)
         response.raise_for_status()
         return response.json()
 
     def check_and_download(self):
-        if self.pending_version:
-            return
-        release = self._fetch_release()
-        latest = parse_version(release.get('tag_name'))
-        current = parse_version(config.APP_VERSION)
-        if not latest or latest <= current:
-            log.info("Kein Update (installiert %s, neuestes %s)", config.APP_VERSION, release.get('tag_name'))
-            return
-        asset = next((a for a in release.get('assets', []) if a.get('name') == ASSET_NAME), None)
-        if not asset:
-            log.warning("Release %s hat kein %s", release.get('tag_name'), ASSET_NAME)
-            return
+        """Gibt 'latest', 'downloaded' oder 'pending' zurück; Fehler werden als Exception weitergereicht."""
+        with self._check_lock:
+            if self.pending_version:
+                return 'pending'
+            self.status['last_check'] = time.time()
+            try:
+                release = self._fetch_release()
+                latest = parse_version(release.get('tag_name'))
+                current = parse_version(config.APP_VERSION)
+                self.status['latest'] = release.get('tag_name', '')
+                if not latest or latest <= current:
+                    log.info("Kein Update (installiert %s, neuestes %s)", config.APP_VERSION, release.get('tag_name'))
+                    self.status['last_error'] = ''
+                    return 'latest'
+                asset = next((a for a in release.get('assets', []) if a.get('name') == ASSET_NAME), None)
+                if not asset:
+                    raise IOError(f"Release {release.get('tag_name')} hat kein {ASSET_NAME}")
+                self._download(release['tag_name'], asset)
+            except Exception as e:
+                self.status['last_error'] = str(e)
+                raise
+            self.status['last_error'] = ''
+            self.pending_version = release['tag_name'].lstrip('v')
+            self._wait_minutes = 0
+            self.app.call(self.install_when_idle)
+            return 'downloaded'
 
+    @staticmethod
+    def _download(tag, asset):
         _, new, _ = exe_paths()
         source = asset['browser_download_url']
-        log.info("Lade Update %s …", release['tag_name'])
-        if os.path.exists(source):
-            shutil.copyfile(source, new)
-        else:
-            with requests.get(source, stream=True, timeout=60) as response:
-                response.raise_for_status()
-                with open(new + '.part', 'wb') as f:
-                    for chunk in response.iter_content(1 << 16):
-                        f.write(chunk)
-            os.replace(new + '.part', new)
-        if asset.get('size') and os.path.getsize(new) != asset['size']:
-            os.remove(new)
-            raise IOError("Download unvollständig")
-
-        self.pending_version = release['tag_name'].lstrip('v')
-        self.app.call(self.install_when_idle)
+        log.info("Lade Update %s …", tag)
+        part = new + '.part'
+        try:
+            if os.path.exists(source):
+                shutil.copyfile(source, part)
+            else:
+                with requests.get(source, stream=True, timeout=60) as response:
+                    response.raise_for_status()
+                    with open(part, 'wb') as f:
+                        for chunk in response.iter_content(1 << 16):
+                            f.write(chunk)
+            if asset.get('size') and os.path.getsize(part) != asset['size']:
+                raise IOError("Download unvollständig")
+            os.replace(part, new)
+        finally:
+            if os.path.exists(part):
+                os.remove(part)
 
     # --- Installation (UI-Thread) ---
     def install_when_idle(self):
-        if any(w.winfo_exists() for w in self.app.windows.values()) or self.app.updater.running:
-            self.app.root.after(60_000, self.install_when_idle)  # offenen Dialog nicht unterbrechen
+        """Installiert sofort – außer ein Dialog ist offen (dann jede Minute erneut prüfen).
+
+        Auf das tägliche Daten-Update wird bewusst NICHT gewartet: Es startet nach dem Neustart ohnehin wieder.
+        """
+        if any(w.winfo_exists() for w in self.app.windows.values()):
+            self._wait_minutes += 1
+            if self._wait_minutes == MAX_WAIT_FOR_DIALOGS:
+                self.app.notify_tray(f"Update {self.pending_version} ist bereit – es wird installiert, "
+                                     "sobald alle Fenster geschlossen sind.")
+            self.app.root.after(60_000, self.install_when_idle)
             return
         self.install()
 

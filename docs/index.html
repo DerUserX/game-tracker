@@ -14,10 +14,11 @@
     --bg: #12162a; --surface: #1a1f36; --card: #232a45; --border: #2f3757;
     --text: #e8ecf8; --muted: #8f97b5; --subtle: #5f6788;
     --accent: #4a90e2; --gold: #f5c542; --hype-bg: #2c2816; --hype-border: #d9a520;
-    --today-bg: #1f4d33; --today: #5ee08f; --week-bg: #4d2323; --week: #ff7b72;
+    /* Countdown-Pill in Kartenfarbe (Hype gold, sonst blau); Dringlichkeit nur als Kontur */
+    --pill-hype-bg: #4a3714; --pill-hype: #f5b14a; --pill-std-bg: #1d3352; --pill-std: #6cb0ff;
+    --outline-today: #5ee08f; --outline-soon: #ff8a1f;
     /* Countdown: Gold/Orange gehört nur den gehypten Spielen */
-    --month-bg: #33275a; --month: #c3a6ff; --later-bg: #2a3045; --later: #b4bcd6; --warn: #f5b14a;
-    --none-bg: #2a3048; --none: #9aa3c0; --trophy: #5aa9ff;
+    --warn: #f5b14a; --trophy: #5aa9ff;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; background: var(--bg); color: var(--text); }
@@ -66,7 +67,11 @@
   .chips { display: flex; flex-wrap: wrap; gap: 4px; }
   .chip { font-size: .68rem; padding: 2px 6px; border-radius: 5px; background: var(--border); color: var(--muted); }
   .chip.ps { background: #1d3557; color: #9cc7ff; }
-  .pill { align-self: flex-start; font-size: .76rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
+  .pill { align-self: flex-start; font-size: .76rem; font-weight: 700; padding: 3px 8px; border-radius: 6px;
+          background: var(--pill-std-bg); color: var(--pill-std); }
+  .game.hyped .pill { background: var(--pill-hype-bg); color: var(--pill-hype); }
+  .pill.today { box-shadow: inset 0 0 0 2px var(--outline-today); }
+  .pill.soon { box-shadow: inset 0 0 0 2px var(--outline-soon); }
 
   .gap { display: flex; align-items: center; gap: 8px; margin: 2px 6px; }
   .gap .line { flex: 1; height: 1px; background: var(--border); }
@@ -161,19 +166,19 @@ function platformList(str) {
 }
 
 function countdown(g) {
-  if (g.manual_tba) return [g.last_known_date ? `Platzhalter ignoriert: ${g.last_known_date}` : 'Datum unbekannt', 'none'];
+  // zweiter Wert = Kontur-Klasse ('' = keine Kontur)
+  if (g.manual_tba) return [g.last_known_date ? `Platzhalter ignoriert: ${g.last_known_date}` : 'Datum unbekannt', ''];
   if (g.release_date) {
     const d = daysUntil(g.release_date);
-    if (d === null) return ['Datum unbekannt', 'none'];
+    if (d === null) return ['Datum unbekannt', ''];
     const date = g.release_date;
-    if (d < 0) return [`Erschienen vor ${-d} ${d === -1 ? 'Tag' : 'Tagen'} · ${date}`, 'none'];
+    if (d < 0) return [`Erschienen vor ${-d} ${d === -1 ? 'Tag' : 'Tagen'} · ${date}`, ''];
     if (d === 0) return [`🎉 Heute! · ${date}`, 'today'];
-    if (d < 7) return [`🔥 Noch ${d} ${d === 1 ? 'Tag' : 'Tage'} · ${date}`, 'week'];
-    if (d < 30) return [`Noch ${d} Tage (${weeks(d)}) · ${date}`, 'month'];
-    return [`Noch ${d} Tage (${weeks(d)}) · ${date}`, 'later'];
+    if (d <= 7) return [`🔥 Noch ${d} ${d === 1 ? 'Tag' : 'Tage'} · ${date}`, 'soon'];
+    return [`Noch ${d} Tage (${weeks(d)}) · ${date}`, ''];
   }
-  if (g.release_window) return [`~ ${g.release_window}`, 'later'];
-  return ['Datum unbekannt', 'none'];
+  if (g.release_window) return [`~ ${g.release_window}`, ''];
+  return ['Datum unbekannt', ''];
 }
 
 // ---------- Rendering ----------
@@ -198,7 +203,7 @@ function gameHtml(g) {
     <div class="info">
       <div class="name-row"><div class="name">${g.hyped ? '★ ' : ''}${esc(name)}</div>${badges}</div>
       ${chips ? `<div class="chips">${chips}</div>` : ''}
-      <div class="pill" style="background:var(--${level}-bg);color:var(--${level})">${esc(text)}</div>
+      <div class="pill${level ? ' ' + level : ''}">${esc(text)}</div>
     </div>
   </div>`;
 }
