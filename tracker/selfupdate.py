@@ -56,6 +56,26 @@ def cleanup_old():
 RETRY_DELAYS = [int(x) for x in os.environ.get('GAMETRACKER_UPDATE_RETRY', '120,300,900,1800').split(',')]
 FIRST_DELAY = int(os.environ.get('GAMETRACKER_UPDATE_FIRST_DELAY', '10'))
 MAX_WAIT_FOR_DIALOGS = 10   # Minuten, danach Hinweis „Update bereit“
+QUICK_RETRY_PAUSES = [3, 10]   # Sekunden zwischen Sofort-Wiederholungen bei Verbindungsabbruch
+
+
+def _with_retries(action, what):
+    """Führt action() aus; bei Verbindungsabbruch/Zeitüberschreitung bis zu 3 Versuche mit kurzen Pausen.
+
+    Nötig, weil manche Netze/Firewalls Verbindungen zu GitHub gelegentlich mitten im Aufbau kappen
+    (ConnectionResetError 10054) – ein zweiter Versuch Sekunden später klappt dann meist.
+    """
+    attempts = len(QUICK_RETRY_PAUSES) + 1
+    for attempt in range(1, attempts + 1):
+        try:
+            return action()
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            if attempt == attempts:
+                raise
+            pause = QUICK_RETRY_PAUSES[attempt - 1]
+            log.warning("%s: Verbindung abgebrochen (%s) – Versuch %d/%d in %d s",
+                        what, type(e).__name__, attempt + 1, attempts, pause)
+            time.sleep(pause)
 
 
 class SelfUpdater:
@@ -123,13 +143,14 @@ class SelfUpdater:
         headers = {'Accept': 'application/vnd.github+json'}
         if config.GITHUB_TOKEN:
             # mit Token: 5000 statt 60 Anfragen/Std. (das 60er-Limit teilen sich alle Geräte am Anschluss)
-            response = requests.get(url, headers={**headers, 'Authorization': f'Bearer {config.GITHUB_TOKEN}'},
-                                    timeout=15)
+            response = _with_retries(lambda: requests.get(
+                url, headers={**headers, 'Authorization': f'Bearer {config.GITHUB_TOKEN}'}, timeout=15),
+                "Update-Abfrage")
             if response.status_code not in (401, 403):
                 response.raise_for_status()
                 return response.json()
             log.warning("Update-Abfrage mit Token abgelehnt (%s) – versuche ohne", response.status_code)
-        response = requests.get(url, headers=headers, timeout=15)
+        response = _with_retries(lambda: requests.get(url, headers=headers, timeout=15), "Update-Abfrage")
         response.raise_for_status()
         return response.json()
 
@@ -167,15 +188,19 @@ class SelfUpdater:
         source = asset['browser_download_url']
         log.info("Lade Update %s …", tag)
         part = new + '.part'
+
+        def fetch():   # bei Abbruch beginnt der Download von vorn
+            with requests.get(source, stream=True, timeout=60) as response:
+                response.raise_for_status()
+                with open(part, 'wb') as f:
+                    for chunk in response.iter_content(1 << 16):
+                        f.write(chunk)
+
         try:
             if os.path.exists(source):
                 shutil.copyfile(source, part)
             else:
-                with requests.get(source, stream=True, timeout=60) as response:
-                    response.raise_for_status()
-                    with open(part, 'wb') as f:
-                        for chunk in response.iter_content(1 << 16):
-                            f.write(chunk)
+                _with_retries(fetch, "Update-Download")
             if asset.get('size') and os.path.getsize(part) != asset['size']:
                 raise IOError("Download unvollständig")
             os.replace(part, new)
