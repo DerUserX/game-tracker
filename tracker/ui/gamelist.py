@@ -51,6 +51,7 @@ class GameList(SmoothWheel, tkinter.Frame):
         self._links = {}        # Canvas-Tag → URL
         self._hover = None
         self._fonts = {}
+        self._drawn_scale = None
 
         self.canvas.bind('<Configure>', self._on_resize)
         self.canvas.bind('<Motion>', self._on_motion)
@@ -72,7 +73,7 @@ class GameList(SmoothWheel, tkinter.Frame):
         return int(round(value * self.scale))
 
     def font(self, size, weight='normal'):
-        key = (size, weight)
+        key = (size, weight, self.scale)   # Skalierung gehört dazu – sonst bleibt die Schrift nach Monitorwechsel klein
         if key not in self._fonts:
             self._fonts[key] = tkfont.Font(family=theme.FONT_FAMILY, size=-self.px(size), weight=weight)
         return self._fonts[key]
@@ -106,7 +107,12 @@ class GameList(SmoothWheel, tkinter.Frame):
 
     # ------------------------------------------------------------- Zeichnen
     def _on_resize(self, event):
-        if abs(event.width - self._canvas_width) > 2:
+        if abs(event.width - self._canvas_width) > 2 or self.scale != self._drawn_scale:
+            self._redraw()
+
+    def ensure_scale(self):
+        """Neu zeichnen, falls sich die Skalierung seit dem letzten Zeichnen geändert hat (Monitorwechsel)."""
+        if self.scale != self._drawn_scale:
             self._redraw()
 
     def _redraw(self):
@@ -116,6 +122,7 @@ class GameList(SmoothWheel, tkinter.Frame):
         self._links.clear()
         self._hover = None
         self._canvas_width = c.winfo_width()
+        self._drawn_scale = self.scale
         if self._canvas_width < 50:  # noch nicht angezeigt → beim ersten <Configure> zeichnen
             return
         if not self._games:
@@ -134,7 +141,7 @@ class GameList(SmoothWheel, tkinter.Frame):
 
     def _draw_empty(self):
         c, mid = self.canvas, self._canvas_width // 2
-        c.create_text(mid, self.px(110), text="📭", font=(theme.EMOJI_FAMILY, -self.px(40)), fill=theme.MUTED)
+        c.create_text(mid, self.px(110), text="⏳", font=(theme.EMOJI_FAMILY, -self.px(40)), fill=theme.MUTED)
         c.create_text(mid, self.px(160), text=self._empty, font=self.font(14, 'bold'), fill=theme.MUTED)
         c.create_text(mid, self.px(186), text="Klicke auf ＋ um Spiele hinzuzufügen", font=self.font(11),
                       fill=theme.SUBTLE)

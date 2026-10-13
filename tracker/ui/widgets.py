@@ -20,15 +20,49 @@ class _Rect(ctypes.Structure):
     _fields_ = [('left', ctypes.c_long), ('top', ctypes.c_long), ('right', ctypes.c_long), ('bottom', ctypes.c_long)]
 
 
-def work_area(widget):
-    """Freier Bildschirmbereich des Hauptmonitors ohne Taskleiste (echte Pixel)."""
-    rect = _Rect()
+class _MonitorInfo(ctypes.Structure):
+    _fields_ = [('cbSize', ctypes.c_ulong), ('rcMonitor', _Rect), ('rcWork', _Rect), ('dwFlags', ctypes.c_ulong)]
+
+
+class _Point(ctypes.Structure):
+    _fields_ = [('x', ctypes.c_long), ('y', ctypes.c_long)]
+
+
+def monitor_at_cursor(widget):
+    """(Arbeitsbereich, Skalierung) des Monitors unter dem Mauszeiger.
+
+    Arbeitsbereich = Monitor ohne Taskleiste, in echten Pixeln: (links, oben, rechts, unten).
+    Skalierung = Windows-Anzeigeskalierung dieses Monitors (1.0 = 100 %, 1.5 = 150 % …).
+    Wichtig bei mehreren Monitoren mit unterschiedlicher Auflösung (z.B. 1080p und 4K).
+    """
     try:
-        if ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):  # SPI_GETWORKAREA
-            return rect.left, rect.top, rect.right, rect.bottom
+        user32 = ctypes.windll.user32
+        point = _Point()
+        user32.GetCursorPos(ctypes.byref(point))
+        user32.MonitorFromPoint.restype = ctypes.c_void_p
+        monitor = user32.MonitorFromPoint(point, 2)  # MONITOR_DEFAULTTONEAREST
+        info = _MonitorInfo()
+        info.cbSize = ctypes.sizeof(_MonitorInfo)
+        user32.GetMonitorInfoW(ctypes.c_void_p(monitor), ctypes.byref(info))
+        dpi_x, dpi_y = ctypes.c_uint(), ctypes.c_uint()
+        ctypes.windll.shcore.GetDpiForMonitor(ctypes.c_void_p(monitor), 0, ctypes.byref(dpi_x), ctypes.byref(dpi_y))
+        r = info.rcWork
+        return (r.left, r.top, r.right, r.bottom), (dpi_x.value + dpi_y.value) / (2 * 96)
     except (AttributeError, OSError):
-        pass
-    return 0, 0, widget.winfo_screenwidth(), widget.winfo_screenheight() - 48
+        return (0, 0, widget.winfo_screenwidth(), widget.winfo_screenheight() - 48), \
+            ctk.ScalingTracker.get_window_scaling(widget)
+
+
+def sync_scaling(window, scale):
+    """Stellt die CTk-Skalierung eines Fensters sofort auf `scale` um (statt auf CTks 100-ms-Prüfung zu warten).
+
+    Muss aufgerufen werden, NACHDEM das Fenster auf den Ziel-Monitor verschoben wurde – sonst setzt
+    CTks eigene Prüfung den Wert gleich wieder zurück.
+    """
+    tracker = ctk.ScalingTracker
+    if window in tracker.window_dpi_scaling_dict and tracker.window_dpi_scaling_dict[window] != scale:
+        tracker.window_dpi_scaling_dict[window] = scale
+        tracker.update_scaling_callbacks_for_window(window)
 
 
 # ---------------------------------------------------------------- Scrollen
@@ -211,7 +245,7 @@ def add_context_menu(entry):
     """Rechtsklick-Menü (Ausschneiden/Kopieren/Einfügen/Alles auswählen) für ein CTkEntry."""
     inner = getattr(entry, '_entry', entry)   # CTkEntry kapselt ein tk.Entry
     menu = tkinter.Menu(inner, tearoff=0, bg=theme.SURFACE, fg=theme.TEXT, activebackground=theme.ACCENT,
-                        activeforeground='white', bd=0, font=theme.font(11))
+                        activeforeground='white', bd=0)
     menu.add_command(label="Ausschneiden", command=lambda: inner.event_generate('<<Cut>>'))
     menu.add_command(label="Kopieren", command=lambda: inner.event_generate('<<Copy>>'))
     def paste():
@@ -233,14 +267,20 @@ def add_context_menu(entry):
 
     def show(event):
         inner.focus_set()
+        # Pixelgröße passend zur aktuellen Skalierung (Punktgrößen wachsen auf 4K nicht mit)
+        scale = ctk.ScalingTracker.get_widget_scaling(entry)
+        menu.configure(font=(theme.FONT_FAMILY, -round(14 * scale)))
         has_selection = bool(inner.selection_present())
         try:
             has_clipboard = bool(inner.clipboard_get())
         except tkinter.TclError:
             has_clipboard = False
-        menu.entryconfigure("Ausschneiden", state='normal' if has_selection else 'disabled')
-        menu.entryconfigure("Kopieren", state='normal' if has_selection else 'disabled')
-        menu.entryconfigure("Einfügen", state='normal' if has_clipboard else 'disabled')
+        # Nicht verfügbare Einträge nur grau färben statt sperren – gesperrte Einträge zeichnet Windows
+        # mit einem Prägeeffekt; ohne Markierung/Zwischenablage tun die Befehle ohnehin nichts.
+        for label, available in (("Ausschneiden", has_selection), ("Kopieren", has_selection),
+                                 ("Einfügen", has_clipboard)):
+            menu.entryconfigure(label, foreground=theme.TEXT if available else theme.SUBTLE,
+                                activebackground=theme.ACCENT if available else theme.SURFACE)
         try:
             menu.tk_popup(event.x_root, event.y_root)
         finally:
@@ -357,10 +397,15 @@ class BaseWindow(ctk.CTkToplevel):
         self.after_idle(self._reveal)   # läuft erst, wenn die Unterklasse ihren Inhalt gebaut hat
 
     def _center(self, width, height):
-        """Mittig im freien Bildschirmbereich. CTk skaliert bei geometry() auch die Position –
-        daher Größe über CTk, Position unskaliert in echten Pixeln."""
-        scale = ctk.ScalingTracker.get_window_scaling(self)
-        left, top, right, bottom = work_area(self)
+        """Mittig auf dem Monitor unter dem Mauszeiger. CTk skaliert bei geometry() auch die Position –
+        daher Größe über CTk, Position unskaliert in echten Pixeln.
+
+        Läuft, bevor die Unterklasse ihre Widgets baut: Fenster zuerst auf den Ziel-Monitor schieben und
+        dessen Skalierung übernehmen, damit alle Widgets gleich in der richtigen Größe entstehen.
+        """
+        (left, top, right, bottom), scale = monitor_at_cursor(self)
+        tkinter.Wm.wm_geometry(self, f"+{left + 20}+{top + 20}")
+        sync_scaling(self, scale)
         height = min(height, int((bottom - top) / scale) - 60)
         self.geometry(f"{width}x{height}")
         x = left + (right - left - int(width * scale)) // 2

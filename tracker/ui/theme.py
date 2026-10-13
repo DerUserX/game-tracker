@@ -32,8 +32,8 @@ UNREAD_BG = '#1f3340'
 # Countdown-Stufen: (Hintergrund, Text)
 PILL_TODAY = ('#1f4d33', '#5ee08f')
 PILL_WEEK = ('#4d2323', '#ff7b72')
-PILL_MONTH = ('#4a3714', '#f5b14a')
-PILL_LATER = ('#1d3352', '#6cb0ff')
+PILL_MONTH = ('#33275a', '#c3a6ff')   # violett – Gold gehört nur den gehypten Spielen
+PILL_LATER = ('#2a3045', '#b4bcd6')   # neutral grau
 PILL_PAST = ('#2a3048', '#9aa3c0')
 PILL_NONE = ('#2a3048', '#8f97b5')
 

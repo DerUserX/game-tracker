@@ -15,7 +15,7 @@ import customtkinter as ctk
 from ..models import is_tba, sort_key_dated, sort_key_tba
 from . import theme
 from .gamelist import GameList
-from .widgets import work_area
+from .widgets import monitor_at_cursor, sync_scaling
 
 WIDTH, HEIGHT = 480, 620
 
@@ -55,8 +55,9 @@ class Popup(ctk.CTkToplevel):
         CTk skaliert bei geometry() auch die Position mit der Windows-Anzeigeskalierung –
         daher nur die Größe über CTk setzen und mit der unskalierten Tk-Methode in echten Pixeln platzieren.
         """
-        scale = ctk.ScalingTracker.get_window_scaling(self)
-        left, top, right, bottom = work_area(self)
+        (left, top, right, bottom), scale = monitor_at_cursor(self)
+        tkinter.Wm.wm_geometry(self, f"+{left + 20}+{top + 20}")   # erst auf den Monitor des Klicks …
+        sync_scaling(self, scale)                                 # … dann dessen Skalierung übernehmen
         margin = int(10 * scale)
         height = min(HEIGHT, int((bottom - top - 2 * margin) / scale))
         self.geometry(f"{WIDTH}x{height}")
@@ -69,8 +70,9 @@ class Popup(ctk.CTkToplevel):
         return self.winfo_exists() and self.state() == 'normal'
 
     def show(self):
-        self.render()
         self._position()
+        self.render()
+        self.list.ensure_scale()   # nach Monitorwechsel mit neuer Skalierung neu zeichnen
         self._had_focus = False
         self.deiconify()
         self.after(30, self._grab_focus)
@@ -171,7 +173,7 @@ class Popup(ctk.CTkToplevel):
         tba = sorted((g for g in games if is_tba(g)), key=sort_key_tba)
 
         self.subtitle.configure(text=f"{len(games)} Spiele · {sum(1 for g in games if g.get('hyped'))} gehypt")
-        labels = [f"📅  Mit Datum ({len(dated)})", f"📭  Ohne Datum ({len(tba)})"]
+        labels = [f"📅  Mit Datum ({len(dated)})", f"⏳  Ohne Datum ({len(tba)})"]
         self.tabs.configure(values=labels)
         self.tabs.set(labels[self.page])
 

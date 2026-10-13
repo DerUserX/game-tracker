@@ -13,7 +13,7 @@ COVER = (40, 54)
 
 class AddDialog(BaseWindow):
     def __init__(self, app, on_close=None):
-        super().__init__(app, "Spiel hinzufügen", 760, 760, on_close=on_close)
+        super().__init__(app, "Spiel hinzufügen", 760, 760, on_close=on_close, maximized=True)
         self._search_id = 0
         self.header("Spiel hinzufügen", "Suche in der IGDB-Datenbank nach Name oder direkt per ID")
 
