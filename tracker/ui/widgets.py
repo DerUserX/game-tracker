@@ -65,6 +65,19 @@ def sync_scaling(window, scale):
         tracker.update_scaling_callbacks_for_window(window)
 
 
+def set_dark_titlebar(window):
+    """Dunkler Windows-Titelbalken per DWM – ohne CTks Verstecken/Wiederzeigen des Fensters."""
+    try:
+        hwnd = ctypes.windll.user32.GetParent(window.winfo_id())
+        value = ctypes.c_int(1)
+        for attribute in (20, 19):   # DWMWA_USE_IMMERSIVE_DARK_MODE (ab 20H1), ältere Windows-Versionen
+            if ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, attribute, ctypes.byref(value),
+                                                          ctypes.sizeof(value)) == 0:
+                break
+    except (AttributeError, OSError):
+        pass
+
+
 # ---------------------------------------------------------------- Scrollen
 _WHEEL_TARGETS = weakref.WeakValueDictionary()   # Canvas-Pfad → Objekt mit _on_wheel()
 
@@ -389,6 +402,10 @@ class BaseWindow(ctk.CTkToplevel):
     def __init__(self, app, title_text, width, height, on_close=None, resizable=True, maximized=False):
         super().__init__(app.root, fg_color=theme.BG)
         self.withdraw()   # CTk merkt sich das und zeigt das Fenster nach dem Titelbalken-Trick nicht wieder an
+        # CTks weitere Titelbalken-Tricks abschalten: resizable() & Co. verstecken das Fenster sonst
+        # nach 10 ms erneut kurz und zeigen es danach u.U. nicht wieder an (Lösch-Dialog verschwand,
+        # blieb aber modal → ganze App blockiert). Den dunklen Titelbalken setzt _reveal() selbst.
+        self._deactivate_windows_window_header_manipulation = True
         self.app = app
         self._on_close = on_close
         self._maximized = maximized
@@ -423,6 +440,7 @@ class BaseWindow(ctk.CTkToplevel):
         if not self.winfo_exists():
             return
         self.update_idletasks()
+        set_dark_titlebar(self)
         if self._maximized:
             self.state('zoomed')
         else:
@@ -477,7 +495,19 @@ class ConfirmDialog(BaseWindow):
     def _reveal(self):
         super()._reveal()
         if self.winfo_exists():
-            self.grab_set()   # modal – geht erst, wenn das Fenster sichtbar ist
+            self.update_idletasks()
+            try:
+                self.grab_set()   # modal – geht erst, wenn das Fenster sichtbar ist
+            except tkinter.TclError:
+                pass
+            self.after(300, self._ensure_visible)
+
+    def _ensure_visible(self):
+        """Sicherheitsnetz: Ein modaler Dialog darf nie unsichtbar bleiben (sonst ist die App blockiert)."""
+        if self.winfo_exists() and self.state() == 'withdrawn':
+            self.deiconify()
+            self.lift()
+            self.focus_force()
 
     def _confirm(self):
         callback = self.on_confirm
