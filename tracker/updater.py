@@ -170,7 +170,7 @@ class Updater:
     # --- Warteliste ---
     def check_waitlist(self):
         for item in list(self.store.waitlist):
-            results = self.igdb.search_with_variations(item['name'])
+            results = self.igdb.search_ranked(item['name'])
             known = item.get('known_games', [])
             new_games = [r for r in results
                          if not any(igdb.is_similar_name(r['name'], k) for k in known)

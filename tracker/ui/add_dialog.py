@@ -86,7 +86,7 @@ class AddDialog(BaseWindow):
                     result = self.app.igdb.by_id(query)
                     results = [result] if result else []
                 else:
-                    results = self.app.igdb.search_with_variations(query)
+                    results = self.app.igdb.search_ranked(query)
             except NetworkError:
                 self.app.call(self._show_error, search_id)
                 return

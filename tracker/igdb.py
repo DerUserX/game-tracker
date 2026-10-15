@@ -3,6 +3,7 @@ import logging
 import re
 import threading
 import time
+import unicodedata
 from datetime import datetime
 from difflib import SequenceMatcher
 
@@ -20,7 +21,7 @@ class NetworkError(Exception):
     """IGDB nicht erreichbar – ein Update-Durchlauf sollte dann abbrechen statt jedes Spiel einzeln zu versuchen."""
 
 
-FIELDS = 'fields name, first_release_date, platforms.name, rating, cover.image_id;'
+FIELDS = 'fields name, first_release_date, platforms.name, rating, cover.image_id, total_rating_count, hypes;'
 
 
 class IGDBClient:
@@ -114,6 +115,8 @@ class IGDBClient:
             'rating': rating,
             'igdb_id': str(game.get('id', '')),
             'cover_id': (game.get('cover') or {}).get('image_id', ''),
+            # nur für die Sortierung der Suchergebnisse (bekanntere Spiele zuerst)
+            'popularity': (game.get('total_rating_count') or 0) + (game.get('hypes') or 0),
         }
 
     def by_id(self, igdb_id):
@@ -132,19 +135,29 @@ class IGDBClient:
         return {str(g['id']): g['cover']['image_id'] for g in data if g.get('cover', {}).get('image_id')}
 
     def search(self, name, limit=50):
-        escaped = name.replace('\\', '\\\\').replace('"', '\\"')
-        data = self._query(f'search "{escaped}"; {FIELDS} limit {limit};', f"'{name}'")
+        data = self._query(f'search "{_escape(name)}"; {FIELDS} limit {limit};', f"'{name}'")
         return [self._parse(g) for g in data] if data else []
 
-    def search_with_variations(self, name):
-        """Sucht alle Variationen und liefert eindeutige Ergebnisse (nach ID)."""
+    def search_name_contains(self, name, limit=50):
+        """Spiele, deren Name den Text enthält (Groß/klein egal), beliebteste zuerst.
+
+        Ergänzt die Volltextsuche: Die ignoriert kurze Wörter wie „of“/„out“ und sortiert nach eigener
+        Relevanz – „Out of Words“ landete dort z.B. erst auf Platz 34 hinter lauter Wortspielen.
+        """
+        data = self._query(f'{FIELDS} where name ~ *"{_escape(name)}"*; sort total_rating_count desc; '
+                           f'limit {limit};', f"Name enthält '{name}'")
+        return [self._parse(g) for g in data] if data else []
+
+    def search_ranked(self, name):
+        """Volltextsuche (inkl. Variationen) + Namens-enthält-Suche, zusammengeführt und sortiert wie auf igdb.com:
+        exakter Name > Name enthält den Suchtext (bekanntere zuerst) > Rest in IGDB-Reihenfolge."""
         results, seen = [], set()
-        for variation in search_variations(name):
-            for result in self.search(variation):
+        for batch in [self.search_name_contains(name)] + [self.search(v) for v in search_variations(name)]:
+            for result in batch:
                 if result['igdb_id'] and result['igdb_id'] not in seen:
                     seen.add(result['igdb_id'])
                     results.append(result)
-        return results
+        return rank_results(name, results)
 
 
 def search_variations(name):
@@ -172,9 +185,38 @@ def search_variations(name):
     return unique
 
 
+def _escape(text):
+    return text.replace('\\', '\\\\').replace('"', '\\"')
+
+
+def rank_results(query, results):
+    """Sortiert Suchergebnisse nach Namensübereinstimmung, dann Beliebtheit, dann ursprünglicher Reihenfolge."""
+    q = normalize_name(query)
+    words = set(q.split())
+
+    def tier(name):
+        n = normalize_name(name)
+        if not q:
+            return 4
+        if n == q:
+            return 0
+        if q in n or (words and words <= set(n.split())):
+            return 1          # enthält den Suchtext/alle Wörter – hier entscheidet die Beliebtheit
+        return 4
+
+    def key(item):
+        index, result = item
+        t = tier(result['name'])
+        # Rest (Stufe 4) bleibt in IGDB-Reihenfolge; sonst bekanntere Spiele zuerst
+        return (t, 0 if t == 4 else -result.get('popularity', 0), index)
+
+    return [r for _, r in sorted(enumerate(results), key=key)]
+
+
 def normalize_name(name):
     if not name:
         return ''
+    name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode()   # „Yōtei“ → „Yotei“
     name = re.sub(r'[^\w\s]', ' ', name.lower())
     name = f" {' '.join(name.split())} "
     roman_map = {' i ': ' 1 ', ' ii ': ' 2 ', ' iii ': ' 3 ', ' iv ': ' 4 ', ' v ': ' 5 ', ' vi ': ' 6 ',
