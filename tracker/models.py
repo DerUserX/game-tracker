@@ -18,6 +18,7 @@ GAME_DEFAULTS = {
     'exophase_id': '',
     'exophase_title': '',
     'exophase_url': '',
+    'exophase_platform': '',   # psn / steam / xbox
 }
 
 
@@ -98,8 +99,10 @@ def is_tba(game):
     return game.get('manual_tba', False) or not game.get('release_date')
 
 
-def has_playstation(game):
-    return 'playstation' in (game.get('platforms') or '').lower()
+def has_achievements(game):
+    """Plattform mit Trophäen/Erfolgen: PlayStation, PC (Steam) oder Xbox – reine Switch-Spiele haben keine."""
+    platforms = (game.get('platforms') or '').lower()
+    return any(p in platforms for p in ('playstation', 'pc', 'windows', 'xbox', 'steam'))
 
 
 def format_weeks(days):

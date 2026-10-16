@@ -38,9 +38,11 @@ Die Spieleliste kommt aus dem Gist, das die Desktop-App bei jeder Änderung aktu
 
 ## Trophäen-Benachrichtigungen
 
-Einmal täglich sucht die App jedes PlayStation-Spiel im Tracker auf Exophase. Exophase entdeckt neue
-Trophäenlisten meist schon vor Release. Du wirst benachrichtigt, wenn eine Liste erstmals auftaucht
-oder Trophäen dazukommen (DLC). Kein Token nötig.
+Einmal täglich sucht die App jedes Spiel mit PlayStation, PC oder Xbox auf Exophase – zuerst die
+PlayStation-Liste, sonst die Steam- und dann die Xbox-Liste (die Erfolge sind bis auf Platin gleich und
+tauchen oft früher auf). Exophase entdeckt neue Listen meist schon vor Release. Du wirst benachrichtigt,
+wenn eine Liste erstmals auftaucht, wenn später die PlayStation-Liste dazukommt oder wenn Trophäen
+dazukommen (DLC). Kein Token nötig.
 Im Bearbeiten-Dialog: **Jetzt prüfen**, **Falscher Treffer** (ignoriert den Treffer), **↗** öffnet die Liste auf Exophase.
 
 ## Entwicklung

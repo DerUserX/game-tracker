@@ -5,8 +5,8 @@ from datetime import datetime
 
 import customtkinter as ctk
 
-from ..trophies import IGNORE
-from ..models import has_playstation, title
+from ..trophies import IGNORE, PLATFORM_NAMES, award_label, stored_platform
+from ..models import has_achievements, title
 from . import theme
 from .widgets import ScrollFrame, BaseWindow, ConfirmDialog, add_context_menu, chip_row, countdown_info, Pill
 
@@ -130,36 +130,38 @@ class EditDialog(BaseWindow):
 
     def _update_trophy_status(self, override=None):
         exo_id = self._trophy_value('exophase_id')
-        if not has_playstation(self.game):
-            text, color = "Kein PlayStation-Spiel", theme.SUBTLE
+        if not has_achievements(self.game):
+            text, color = "Kein PlayStation-, PC- oder Xbox-Spiel", theme.SUBTLE
         elif override:
             text, color = override
         elif exo_id == IGNORE:
             text, color = "Treffer ignoriert – „Jetzt prüfen“ sucht neu", theme.SUBTLE
         elif exo_id:
-            text = (f"🏆 {self._trophy_value('psn_trophy_count')} Trophäen\n"
-                    f"Exophase: {self._trophy_value('exophase_title')}")
+            platform = self._trophy_value('exophase_platform') or stored_platform(self.game)
+            text = (f"🏆 {award_label(platform, self._trophy_value('psn_trophy_count'))}\n"
+                    f"{PLATFORM_NAMES.get(platform, 'Exophase')}: {self._trophy_value('exophase_title')}")
             color = theme.TROPHY
         else:
             text, color = "Noch keine Trophäenliste – wird täglich geprüft", theme.MUTED
         self.trophy_status.configure(text=text, text_color=color)
         has_match = bool(exo_id) and exo_id != IGNORE
-        self.check_btn.configure(state='normal' if has_playstation(self.game) else 'disabled')
+        self.check_btn.configure(state='normal' if has_achievements(self.game) else 'disabled')
         self.wrong_btn.configure(state='normal' if has_match else 'disabled')
         self.open_btn.configure(state='normal' if has_match and self._trophy_value('exophase_url') else 'disabled')
 
     def check_trophies(self):
         self.check_btn.configure(state='disabled')
         self._update_trophy_status(("Suche auf Exophase…", theme.MUTED))
-        game = {**self.game, 'exophase_id': ''}
+        game = {**self.game, 'exophase_id': '', 'exophase_platform': ''}
 
         def work():
             try:
-                self.app.call(done, self.app.trophies.find(game), None)
+                entry, platform = self.app.trophies.find(game)
+                self.app.call(done, entry, platform, None)
             except Exception as e:
-                self.app.call(done, None, e)
+                self.app.call(done, None, None, e)
 
-        def done(entry, error):
+        def done(entry, platform, error):
             if not self.winfo_exists():
                 return
             if error:
@@ -169,12 +171,13 @@ class EditDialog(BaseWindow):
                     'exophase_id': str(entry.get('master_id', '')),
                     'exophase_title': entry.get('title', ''),
                     'exophase_url': entry.get('endpoint_awards', ''),
+                    'exophase_platform': platform,
                     'psn_trophy_count': int(entry.get('total_awards') or 0),
                 }
                 self._update_trophy_status()
             else:
                 self.trophy_fields = {'exophase_id': '', 'exophase_title': '', 'exophase_url': '',
-                                      'psn_trophy_count': 0}
+                                      'exophase_platform': '', 'psn_trophy_count': 0}
                 self._update_trophy_status(("Noch keine Trophäenliste gefunden", theme.MUTED))
             self.check_btn.configure(state='normal')
 
@@ -182,7 +185,7 @@ class EditDialog(BaseWindow):
 
     def ignore_match(self):
         self.trophy_fields = {'exophase_id': IGNORE, 'exophase_title': '', 'exophase_url': '',
-                              'psn_trophy_count': 0}
+                              'exophase_platform': '', 'psn_trophy_count': 0}
         self._update_trophy_status()
 
     def open_exophase(self):

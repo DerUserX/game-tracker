@@ -195,7 +195,7 @@ function gameHtml(g) {
   const badges = (g.manual_tba ? '<span class="badge tba">TBA</span>' : '') +
                  (g.psn_trophy_count
                    ? (/^https:\/\/www\.exophase\.com\//.test(g.exophase_url || '')
-                      ? `<a class="badge trophy" href="${esc(g.exophase_url)}" target="_blank" rel="noopener">🏆 ${+g.psn_trophy_count} ↗</a>`
+                      ? `<a class="badge trophy" href="${esc(g.exophase_url)}" target="_blank" rel="noopener" title="${esc({psn: 'PlayStation-Trophäen', steam: 'Steam-Erfolge', xbox: 'Xbox-Erfolge'}[g.exophase_platform || 'psn'] || '')}">🏆 ${+g.psn_trophy_count} ↗</a>`
                       : `<span class="badge trophy">🏆 ${+g.psn_trophy_count}</span>`)
                    : '');
   return `<div class="game${g.hyped ? ' hyped' : ''}">
