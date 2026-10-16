@@ -12,6 +12,7 @@ from .. import config, paths
 from ..cloud import GistUploader
 from ..covers import CoverCache
 from ..igdb import IGDBClient
+from .. import selfupdate
 from ..selfupdate import SelfUpdater
 from ..storage import Store
 from ..trophies import ExophaseMonitor
@@ -203,7 +204,12 @@ class TrackerApp:
         except Exception:
             log.info("Tray-Benachrichtigung nicht möglich: %s", text)
 
-    def _startup_notices(self, updated_to):
+    def _startup_notices(self, updated_to, rolled_back=None):
+        if rolled_back:
+            text = (f"Version {rolled_back} ließ sich nicht starten – Game Tracker läuft wieder mit "
+                    f"{config.APP_VERSION}. Diese Version wird übersprungen, bis eine neuere erscheint.")
+            self.store.add_notification("⚠️ Update zurückgenommen", text, "update")
+            self.notify_tray(text)
         if updated_to:
             text = f"Game Tracker wurde auf Version {updated_to} aktualisiert."
             self.store.add_notification("⬆️ Aktualisiert", text, "update")
@@ -218,11 +224,14 @@ class TrackerApp:
                           "Ohne sie gibt es keine IGDB-Updates und keinen Gist-Upload. "
                           "config.json vom alten PC übernehmen oder Werte ergänzen (siehe README)."], "⚠️")
 
-    def run(self, show_popup=False, updated_to=None):
+    def run(self, show_popup=False, updated_to=None, rolled_back=None):
         self._start_tray()
         self.updater.start_scheduler()
         self.self_updater.start()
-        self.root.after(1500, lambda: self._startup_notices(updated_to))
+        self.root.after(1500, lambda: self._startup_notices(updated_to, rolled_back))
+        if updated_to:
+            # läuft die neue Version eine Weile sauber, bekommt die alte (wartende) Version das „ok“
+            self.root.after(selfupdate.HEALTHY_AFTER * 1000, self.self_updater.mark_healthy)
         self.root.after(50, self._poll)
         self.root.after(500, self._prebuild_popup)
         if show_popup:

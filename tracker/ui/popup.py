@@ -186,7 +186,7 @@ class Popup(ctk.CTkToplevel):
         if archive:
             subtitle += f" · {len(archive)} im Archiv"
         self.subtitle.configure(text=subtitle)
-        labels = [f"📅 Mit Datum ({len(dated)})", f"⏳ Ohne Datum ({len(tba)})", f"🗄 Archiv ({len(archive)})"]
+        labels = [f"Mit Datum ({len(dated)})", f"Ohne Datum ({len(tba)})", f"Archiv ({len(archive)})"]
         self.tabs.configure(values=labels)
         self.tabs.set(labels[self.page])
 
@@ -230,7 +230,8 @@ class Popup(ctk.CTkToplevel):
         self.list.set_games(games, with_gaps=self.page != 1, empty_text=empty, by_year=self.by_year.get())
 
     def _on_tab(self, value):
-        new_page = {"📅": 0, "⏳": 1, "🗄": 2}.get(value[:1], 0)
+        new_page = next((i for i, prefix in enumerate(("Mit Datum", "Ohne Datum", "Archiv"))
+                         if value.startswith(prefix)), 0)
         if new_page != self.page:
             self.page = new_page
             self._show_page()

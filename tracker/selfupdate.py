@@ -2,7 +2,12 @@
 
 Ablauf: neuestes Release prüfen → wenn neuer, GameTracker.exe als GameTracker.new.exe laden →
 (sobald kein Dialog offen ist) laufende exe in GameTracker.old.exe umbenennen, neue an ihre Stelle,
-neuen Prozess mit --updated <version> starten, selbst beenden. Der neue Prozess löscht .old.exe.
+neuen Prozess mit --updated <version> starten.
+
+Rückweg bei kaputtem Update: Die alte Version beendet nur ihre Oberfläche und wartet, bis die neue
+„läuft sauber“ meldet (update_health.json). Stürzt die neue ab oder meldet sich nicht innerhalb von
+HEALTH_TIMEOUT Sekunden, stellt die alte sich wieder her, startet sich neu und merkt sich die kaputte
+Version, damit sie nicht erneut geladen wird. Erst nach der Rückmeldung löscht die neue .old.exe.
 Nur in der gebauten exe aktiv – beim Start per Python passiert nichts.
 """
 import logging
@@ -16,7 +21,7 @@ import time
 
 import requests
 
-from . import config
+from . import config, singleinstance
 
 log = logging.getLogger(__name__)
 
@@ -37,12 +42,55 @@ def exe_paths():
     return exe, os.path.join(folder, 'GameTracker.new.exe'), os.path.join(folder, 'GameTracker.old.exe')
 
 
-def cleanup_old():
-    """Löscht Reste des letzten Updates (mit kurzer Wiederholung, der alte Prozess beendet sich evtl. noch)."""
+HEALTH_TIMEOUT = int(os.environ.get('GAMETRACKER_HEALTH_TIMEOUT', '90'))   # Sekunden
+HEALTHY_AFTER = int(os.environ.get('GAMETRACKER_HEALTHY_AFTER', '15'))    # so lange muss die neue Version laufen
+
+
+def _side_file(name):
+    return os.path.join(os.path.dirname(sys.executable), name)
+
+
+def _read_json(path):
+    import json
+    try:
+        with open(path, encoding='utf-8') as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_json(path, data):
+    import json
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(data, f)
+
+
+def health_file():
+    return _side_file('update_health.json')
+
+
+def skip_file():
+    return _side_file('update_skip.json')
+
+
+def skipped_version():
+    """Version, die nach einem fehlgeschlagenen Start übersprungen wird."""
+    return _read_json(skip_file()).get('version', '')
+
+
+def cleanup_old(updated=False, keep_health=False):
+    """Löscht Reste des letzten Updates (mit kurzer Wiederholung, der alte Prozess beendet sich evtl. noch).
+
+    Direkt nach einem Update (updated=True) bleibt .old.exe stehen – sie wird für den Rückweg gebraucht,
+    bis mark_healthy() die neue Version bestätigt.
+    """
     if not getattr(sys, 'frozen', False):
         return
     _, new, old = exe_paths()
-    for path in (old, new):
+    paths_to_remove = [new] if updated else [old, new, _side_file('GameTracker.failed.exe')]
+    if not updated and not keep_health and os.path.exists(health_file()):
+        os.remove(health_file())
+    for path in paths_to_remove:
         for _ in range(20):
             if not os.path.exists(path):
                 break
@@ -82,6 +130,7 @@ class SelfUpdater:
     def __init__(self, app):
         self.app = app
         self.pending_version = None
+        self.handover = None   # nach install(): Daten für watch_handover() in der alten Version
         self._check_lock = threading.Lock()
         self._wait_minutes = 0
         self.status = {'last_check': None, 'last_error': '', 'latest': ''}
@@ -169,6 +218,11 @@ class SelfUpdater:
                     log.info("Kein Update (installiert %s, neuestes %s)", config.APP_VERSION, release.get('tag_name'))
                     self.status['last_error'] = ''
                     return 'latest'
+                if release.get('tag_name', '').lstrip('v') == skipped_version():
+                    log.info("Version %s wird übersprungen (startete beim letzten Versuch nicht)",
+                             release.get('tag_name'))
+                    self.status['last_error'] = ''
+                    return 'latest'
                 asset = next((a for a in release.get('assets', []) if a.get('name') == ASSET_NAME), None)
                 if not asset:
                     raise IOError(f"Release {release.get('tag_name')} hat kein {ASSET_NAME}")
@@ -230,9 +284,10 @@ class SelfUpdater:
                 os.remove(old)
             os.replace(exe, old)          # laufende exe darf umbenannt werden
             os.replace(new, exe)
-            env = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT='1')  # neuer onefile-Prozess entpackt frisch
-            subprocess.Popen([exe, '--updated', self.pending_version], env=env, close_fds=True,
-                             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
+            _write_json(health_file(), {'version': self.pending_version, 'ok': False})
+            singleinstance.release()      # die neue Version darf starten, während wir auf ihre Rückmeldung warten
+            proc = _start(exe, ['--updated', self.pending_version])
+            self.handover = {'proc': proc, 'version': self.pending_version, 'previous': config.APP_VERSION}
         except Exception as e:
             log.error("Update-Installation fehlgeschlagen: %s", e)
             if not os.path.exists(exe) and os.path.exists(old):
@@ -242,5 +297,76 @@ class SelfUpdater:
                                             "update")
             self.pending_version = None
             return
-        log.info("Update auf %s gestartet – beende mich", self.pending_version)
+        log.info("Update auf %s gestartet – warte auf Rückmeldung der neuen Version", self.pending_version)
         self.app.quit()
+
+    def mark_healthy(self):
+        """Von der NEUEN Version aufgerufen, sobald sie eine Weile sauber läuft: Update bestätigen, Altlasten löschen."""
+        data = _read_json(health_file())
+        if not data:
+            return
+        data['ok'] = True
+        _write_json(health_file(), data)
+        log.info("Update auf %s bestätigt", data.get('version'))
+
+        def later():
+            # erst warten, bis die alte Version die Rückmeldung gelesen und sich beendet hat; die
+            # Rückmeldedatei bleibt bis zum nächsten normalen Start stehen (sonst Fehlalarm beim Lesen)
+            time.sleep(10)
+            cleanup_old(keep_health=True)
+        threading.Thread(target=later, daemon=True).start()
+
+
+def _start(exe, args):
+    env = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT='1')  # neuer onefile-Prozess entpackt frisch
+    return subprocess.Popen([exe] + args, env=env, close_fds=True,
+                            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
+
+
+def watch_handover(handover):
+    """Läuft in der ALTEN Version nach dem Beenden der Oberfläche: wartet auf die Rückmeldung der neuen.
+
+    Bleibt sie aus (Absturz oder Zeitüberschreitung), wird die alte Version wiederhergestellt und neu gestartet.
+    """
+    proc, version = handover['proc'], handover['version']
+    deadline = time.time() + HEALTH_TIMEOUT
+    while time.time() < deadline:
+        if _read_json(health_file()).get('ok'):
+            log.info("Neue Version %s läuft – alte Version beendet sich", version)
+            return
+        if proc.poll() is not None:
+            log.error("Neue Version %s hat sich beendet (Code %s), bevor sie bereit war", version, proc.returncode)
+            break
+        time.sleep(0.5)
+    else:
+        log.error("Neue Version %s hat sich nicht innerhalb von %d s gemeldet", version, HEALTH_TIMEOUT)
+    rollback(proc, version, handover['previous'])
+
+
+def rollback(proc, version, previous):
+    exe, _, old = exe_paths()
+    if proc.poll() is None:
+        try:
+            proc.kill()
+            proc.wait(timeout=10)
+        except Exception:
+            pass
+    for _ in range(20):   # die abgestürzte exe ist evtl. noch kurz gesperrt
+        try:
+            failed = _side_file('GameTracker.failed.exe')
+            if os.path.exists(failed):
+                os.remove(failed)
+            if os.path.exists(exe):
+                os.replace(exe, failed)
+            os.replace(old, exe)
+            break
+        except OSError:
+            time.sleep(0.5)
+    else:
+        log.error("Rückweg fehlgeschlagen – bitte GameTracker.old.exe von Hand in GameTracker.exe umbenennen")
+        return
+    _write_json(skip_file(), {'version': version})
+    if os.path.exists(health_file()):
+        os.remove(health_file())
+    log.warning("Update %s fehlgeschlagen – zurück auf %s", version, previous)
+    _start(exe, ['--rolled-back', version])

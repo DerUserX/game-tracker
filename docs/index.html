@@ -104,9 +104,9 @@
   <div class="tabs-wrap">
     <div class="tabs" role="tablist">
       <div class="indicator" id="indicator"></div>
-      <button id="tab0" class="active" role="tab">📅 Mit Datum</button>
-      <button id="tab1" role="tab">⏳ Ohne Datum</button>
-      <button id="tab2" role="tab">🗄 Archiv</button>
+      <button id="tab0" class="active" role="tab">Mit Datum</button>
+      <button id="tab1" role="tab">Ohne Datum</button>
+      <button id="tab2" role="tab">Archiv</button>
     </div>
     <label class="view-toggle"><input type="checkbox" id="byYear"> nach Jahren</label>
   </div>
@@ -273,9 +273,9 @@ function render() {
 
   const archivedText = archive.length ? ` · ${archive.length} im Archiv` : '';
   $('sub').textContent = `${active.length} Spiele · ${active.filter(g => g.hyped).length} gehypt${archivedText}`;
-  $('tab0').textContent = `📅 Mit Datum (${dated.length})`;
-  $('tab1').textContent = `⏳ Ohne Datum (${tba.length})`;
-  $('tab2').textContent = `🗄 Archiv (${archive.length})`;
+  $('tab0').textContent = `Mit Datum (${dated.length})`;
+  $('tab1').textContent = `Ohne Datum (${tba.length})`;
+  $('tab2').textContent = `Archiv (${archive.length})`;
 
   $('page0').innerHTML = listHtml(dated, true) || emptyHtml('Keine Spiele mit Datum');
   $('page1').innerHTML = listHtml(tba, false) || emptyHtml('Keine Spiele ohne Datum');

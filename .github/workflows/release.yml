@@ -39,6 +39,14 @@ jobs:
       - name: Build exe
         run: python -m PyInstaller GameTracker.spec --noconfirm --distpath release
 
+      - name: Start-Test (Oberfläche aufbauen und beenden)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath release/GameTracker.exe -ArgumentList '--selftest' -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw "Start-Test: keine Rückmeldung nach 120 s" }
+          if ($p.ExitCode -ne 0) { throw "Start-Test fehlgeschlagen (Exit-Code $($p.ExitCode))" }
+          Write-Host "Start-Test erfolgreich"
+
       - name: Publish release
         shell: pwsh
         env:
