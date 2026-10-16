@@ -311,6 +311,8 @@ def countdown_info(game):
     heute grün, bis 7 Tage orange, sonst keine (None).
     """
     colors = theme.PILL_HYPE if game.get('hyped') else theme.PILL_STANDARD
+    if game.get('release_window') and not game.get('archived'):
+        return f"📆 {game['release_window']}", colors, None   # IGDB kennt nur Jahr/Quartal/Monat
     if game.get('manual_tba'):
         last = game.get('last_known_date')
         return (f"Platzhalter ignoriert: {last}" if last else "Datum unbekannt"), colors, None

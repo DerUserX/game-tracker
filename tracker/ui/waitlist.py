@@ -108,7 +108,7 @@ class WaitlistMatchDialog(BaseWindow):
         ctk.CTkLabel(row, text=result['name'], font=theme.BODY_BOLD, anchor='w', text_color=theme.TEXT
                      ).grid(row=0, column=1, sticky='ew', pady=(8, 0))
         plats = ', '.join(short_platform(p) for p in platform_list(result['platforms'])[:5])
-        meta = f"{format_date_european(result['release_date']) or 'TBA'}   ·   ID {result['igdb_id']}"
+        meta = f"{result.get('release_window') or format_date_european(result['release_date']) or 'TBA'}   ·   ID {result['igdb_id']}"
         if plats:
             meta += f"   ·   {plats}"
         ctk.CTkLabel(row, text=meta, font=theme.SMALL, text_color=theme.MUTED, anchor='w'

@@ -52,7 +52,10 @@ class EditDialog(BaseWindow):
         ctk.CTkButton(buttons, text="Abbrechen", width=110, command=self.close,
                       **theme.button_style('ghost')).pack(side='right', pady=12)
         ctk.CTkButton(buttons, text="🗑  Löschen", width=110, command=self.confirm_delete,
-                      **theme.button_style('danger')).pack(side='left', padx=20, pady=12)
+                      **theme.button_style('danger')).pack(side='left', padx=(20, 6), pady=12)
+        archived = self.game.get('archived')
+        ctk.CTkButton(buttons, text="↩  Aus Archiv holen" if archived else "🗄  Archivieren", width=150,
+                      command=self.toggle_archive, **theme.button_style('subtle')).pack(side='left', pady=12)
 
         # --- Formular ---
         form = ScrollFrame(self, fg_color='transparent')
@@ -215,7 +218,13 @@ class EditDialog(BaseWindow):
         fields = dict(display_name=self.display_name.get().strip(), release_date=date,
                       platforms=self.platforms.get().strip(), igdb_id=igdb_id, hyped=self.hyped.get(),
                       manual_tba=manual_tba, last_known_date=last_known, **self.trophy_fields)
+        if date != self.game.get('release_date'):
+            fields['release_window'] = ''   # von Hand ein genaues Datum gesetzt → kein „Q2 2027“ mehr
         self.app.store.update_game(self.uid, **fields)
+        self.close()
+
+    def toggle_archive(self):
+        self.app.store.set_archived(self.uid, not self.game.get('archived'))
         self.close()
 
     def confirm_delete(self):

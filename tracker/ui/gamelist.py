@@ -11,7 +11,9 @@ import tkinter.font as tkfont
 import customtkinter as ctk
 from PIL import Image, ImageDraw, ImageTk
 
-from ..models import days_between, platform_list, short_platform, title
+from collections import Counter
+
+from ..models import days_between, days_until, is_tba, platform_list, release_year, short_platform, title
 from . import theme
 from .widgets import SmoothWheel, countdown_info
 
@@ -21,6 +23,9 @@ GAP = 8                   # Abstand zwischen Karten
 SEPARATOR = 18            # Höhe der Tagesabstand-Zeile
 TROPHY_BG = '#1b2f4d'
 TROPHY_BG_HOVER = '#27446e'
+ARCHIVE_BG = '#2a3048'
+ARCHIVE_BG_HOVER = '#3a4262'
+YEAR_HEADER = 30           # Höhe der Jahres-Überschrift
 
 
 def _rgb(color):
@@ -31,11 +36,12 @@ def _rgb(color):
 class GameList(SmoothWheel, tkinter.Frame):
     """Liste der Spielkarten. on_open(uid) beim Klick auf eine Karte, on_link(url) beim 🏆-Abzeichen."""
 
-    def __init__(self, master, app, on_open, on_link):
+    def __init__(self, master, app, on_open, on_link, on_archive=None):
         super().__init__(master, bg=theme.BG, bd=0, highlightthickness=0)
         self.app = app
         self.on_open = on_open
         self.on_link = on_link
+        self.on_archive = on_archive
         self.canvas = tkinter.Canvas(self, bg=theme.BG, highlightthickness=0, bd=0)
         self.scrollbar = ctk.CTkScrollbar(self, command=self.canvas.yview, button_color=theme.BORDER,
                                           button_hover_color=theme.SUBTLE, fg_color='transparent', width=12)
@@ -44,11 +50,11 @@ class GameList(SmoothWheel, tkinter.Frame):
         self.canvas.pack(side='left', fill='both', expand=True)
         self._register_wheel(self.canvas)
 
-        self._games, self._with_gaps, self._empty = [], False, ''
+        self._games, self._with_gaps, self._empty, self._by_year = [], False, '', False
         self._canvas_width = 0
         self._shapes = {}       # Cache: (w, h, r, fill, border) → PhotoImage
         self._cards = {}        # uid → (bg-Item-ID, normal-Bild, hover-Bild)
-        self._links = {}        # Canvas-Tag → URL
+        self._links = {}        # Canvas-Tag → Abzeichen (Aktion, Bild-Item, Breite, Farben)
         self._hover = None
         self._fonts = {}
         self._drawn_scale = None
@@ -59,8 +65,9 @@ class GameList(SmoothWheel, tkinter.Frame):
         self.canvas.bind('<Button-1>', self._on_click)
 
     # ------------------------------------------------------------- öffentlich
-    def set_games(self, games, with_gaps, empty_text):
-        self._games, self._with_gaps, self._empty = list(games), with_gaps, empty_text
+    def set_games(self, games, with_gaps, empty_text, by_year=False):
+        """by_year: Jahres-Überschriften („2027 ── 8 Spiele“) statt Tagesabstand an Jahresgrenzen."""
+        self._games, self._with_gaps, self._empty, self._by_year = list(games), with_gaps, empty_text, by_year
         self._redraw()
         self.canvas.yview_moveto(0)
 
@@ -133,8 +140,13 @@ class GameList(SmoothWheel, tkinter.Frame):
 
         x0, x1 = self.px(10), self._canvas_width - self.px(4)
         y = self.px(6)
+        years = [release_year(g) for g in self._games] if self._by_year else []
+        per_year = Counter(years)
         for i, game in enumerate(self._games):
-            if self._with_gaps and i > 0:
+            new_year = self._by_year and (i == 0 or years[i] != years[i - 1])
+            if new_year:
+                y = self._draw_year(y, years[i], per_year[years[i]])
+            elif self._with_gaps and i > 0:
                 gap = days_between(self._games[i - 1], game)
                 if gap:
                     y = self._draw_separator(y, gap)
@@ -148,6 +160,36 @@ class GameList(SmoothWheel, tkinter.Frame):
         c.create_text(mid, self.px(186), text="Klicke auf ＋ um Spiele hinzuzufügen", font=self.font(11),
                       fill=theme.SUBTLE)
         c.configure(scrollregion=(0, 0, self._canvas_width, self.px(220)))
+
+    def _draw_year(self, y, year, count):
+        """Schlichte Jahres-Überschrift: „2027 ───────── 8 Spiele“."""
+        c = self.canvas
+        top = y + (self.px(8) if y > self.px(6) else 0)
+        mid_y = top + self.px(YEAR_HEADER) // 2
+        left = self.px(14)
+        label = str(year) if year else "Ohne Jahr"
+        title_font, count_font = self.font(13, 'bold'), self.font(10)
+        count_text = f"{count} {'Spiel' if count == 1 else 'Spiele'}"
+        c.create_text(left, mid_y, text=label, anchor='w', font=title_font, fill=theme.TEXT)
+        right = self._canvas_width - self.px(14)
+        c.create_text(right, mid_y, text=count_text, anchor='e', font=count_font, fill=theme.SUBTLE)
+        c.create_line(left + title_font.measure(label) + self.px(10), mid_y,
+                      right - count_font.measure(count_text) - self.px(10), mid_y, fill=theme.BORDER)
+        return top + self.px(YEAR_HEADER)
+
+    def _badge(self, x, top, text, tags, colors, action, link_tag):
+        """Klickbares Abzeichen (🏆 / Archivieren) rechtsbündig bis x; gibt die neue linke Kante zurück."""
+        c = self.canvas
+        bg, bg_hover, fg = colors
+        font = self.font(10, 'bold')
+        w = font.measure(text) + self.px(16)
+        x -= w
+        item = c.create_image(x, top + self.px(1), anchor='nw', tags=tags,
+                              image=self.shape(w, self.px(20), self.px(6), bg))
+        c.create_text(x + w // 2, top + self.px(11), text=text, font=font, fill=fg, tags=tags)
+        if action:
+            self._links[link_tag] = (action, item, w, bg, bg_hover)
+        return x - self.px(4)
 
     def _draw_separator(self, y, days):
         c = self.canvas
@@ -196,18 +238,19 @@ class GameList(SmoothWheel, tkinter.Frame):
                       pad_x=7, height=20)
             badge_x -= self.px(4)
         if game.get('psn_trophy_count'):
-            text = f"🏆 {game['psn_trophy_count']}"
-            w = badge_font.measure(text) + self.px(16)
-            badge_x -= w
             url = game.get('exophase_url')
-            link_tag = f'link:{uid}' if url else tag
-            tags = (tag, link_tag) if url else (tag,)
-            item_bg = c.create_image(badge_x, top + self.px(1), anchor='nw', tags=tags,
-                                     image=self.shape(w, self.px(20), self.px(6), TROPHY_BG))
-            c.create_text(badge_x + w // 2, top + self.px(11), text=text, font=badge_font, fill=theme.TROPHY, tags=tags)
-            if url:
-                self._links[link_tag] = (url, item_bg, w)
-            badge_x -= self.px(4)
+            link_tag = f'link:{uid}'
+            badge_x = self._badge(badge_x, top, f"🏆 {game['psn_trophy_count']}",
+                                  (tag, link_tag) if url else (tag,), (TROPHY_BG, TROPHY_BG_HOVER, theme.TROPHY),
+                                  (lambda u=url: self.on_link(u)) if url else None, link_tag)
+        days = days_until(game.get('release_date'))
+        if (self.on_archive and not game.get('archived') and not is_tba(game)
+                and days is not None and days < 0):
+            # Vorschlag: erschienenes Spiel mit einem Klick ins Archiv
+            archive_tag = f'archive:{uid}'
+            badge_x = self._badge(badge_x, top, "🗄 Archivieren", (tag, archive_tag),
+                                  (ARCHIVE_BG, ARCHIVE_BG_HOVER, theme.MUTED),
+                                  lambda u=uid: self.on_archive(u), archive_tag)
 
         name_item = c.create_text(text_x, top, anchor='nw', text=('★ ' if hyped else '') + name,
                                   font=self.font(13, 'bold'), fill=theme.GOLD if hyped else theme.TEXT,
@@ -264,7 +307,7 @@ class GameList(SmoothWheel, tkinter.Frame):
     def _on_motion(self, event):
         tags = self._tags_at(event)
         uid = next((t[5:] for t in tags if t.startswith('card:')), None)
-        link = next((t for t in tags if t.startswith('link:')), None)
+        link = next((t for t in tags if t in self._links), None)
         self._set_hover(uid, link)
 
     def _set_hover(self, uid, link=None):
@@ -277,22 +320,22 @@ class GameList(SmoothWheel, tkinter.Frame):
             item, normal, _ = self._cards[old_uid]
             c.itemconfigure(item, image=normal)
         if old_link in self._links:
-            _, item, w = self._links[old_link]
-            c.itemconfigure(item, image=self.shape(w, self.px(20), self.px(6), TROPHY_BG))
+            _, item, w, bg, _ = self._links[old_link]
+            c.itemconfigure(item, image=self.shape(w, self.px(20), self.px(6), bg))
         if uid in self._cards:
             item, _, hover = self._cards[uid]
             c.itemconfigure(item, image=hover)
         if link in self._links:
-            _, item, w = self._links[link]
-            c.itemconfigure(item, image=self.shape(w, self.px(20), self.px(6), TROPHY_BG_HOVER))
+            _, item, w, _, bg_hover = self._links[link]
+            c.itemconfigure(item, image=self.shape(w, self.px(20), self.px(6), bg_hover))
         c.configure(cursor='hand2' if uid else '')
         self._hover = hover_key
 
     def _on_click(self, event):
         tags = self._tags_at(event)
-        link = next((t for t in tags if t.startswith('link:')), None)
-        if link in self._links:
-            self.on_link(self._links[link][0])
+        link = next((t for t in tags if t in self._links), None)
+        if link:
+            self._links[link][0]()   # Abzeichen-Aktion (Exophase öffnen / archivieren) statt Bearbeiten
             return
         uid = next((t[5:] for t in tags if t.startswith('card:')), None)
         if uid:

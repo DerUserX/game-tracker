@@ -57,7 +57,10 @@ class ManagerWindow(BaseWindow):
         ctk.CTkLabel(row, text=name, font=theme.BODY_BOLD, anchor='w',
                      text_color=theme.GOLD if game.get('hyped') else theme.TEXT).grid(row=0, column=1, sticky='ew')
         date = 'TBA' if is_tba(game) else game['release_date']
+        date = game.get('release_window') or date
         meta = f"{date}" + (f"   ·   ID {game['igdb_id']}" if game.get('igdb_id') else "")
+        if game.get('archived'):
+            meta = "🗄 Archiv   ·   " + meta
         if game.get('psn_trophy_count'):
             meta += f"   ·   🏆 {game['psn_trophy_count']}"
         ctk.CTkLabel(row, text=meta, font=theme.SMALL, text_color=theme.MUTED).grid(row=0, column=2, padx=10)

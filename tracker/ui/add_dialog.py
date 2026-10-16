@@ -150,7 +150,7 @@ class AddDialog(BaseWindow):
 
         ctk.CTkLabel(row, text=result['name'], font=theme.BODY_BOLD, text_color=theme.TEXT, anchor='w',
                      wraplength=430, justify='left').grid(row=0, column=1, sticky='ew', pady=(8, 0))
-        date = format_date_european(result['release_date']) or 'TBA'
+        date = result.get('release_window') or format_date_european(result['release_date']) or 'TBA'
         plats = ', '.join(short_platform(p) for p in platform_list(result['platforms'])[:5])
         meta = f"{date}   ·   ID {result['igdb_id']}" + (f"   ·   {plats}" if plats else '')
         ctk.CTkLabel(row, text=meta, font=theme.SMALL, text_color=theme.MUTED, anchor='w'

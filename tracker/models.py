@@ -1,4 +1,5 @@
 """Datenmodell-Helfer für Spiele (dicts, kompatibel zum bestehenden games.json)."""
+import re
 import uuid
 from datetime import datetime
 
@@ -6,7 +7,7 @@ GAME_DEFAULTS = {
     'name': '',
     'display_name': '',
     'release_date': '',
-    'release_window': '',
+    'release_window': '',      # ungenauer Termin laut IGDB: „2027“, „Q2 2027“, „März 2027“ – leer = Tagesdatum
     'platforms': '',
     'rating': 0,
     'hyped': False,
@@ -19,6 +20,8 @@ GAME_DEFAULTS = {
     'exophase_title': '',
     'exophase_url': '',
     'exophase_platform': '',   # psn / steam / xbox
+    'archived': False,         # im Archiv: nicht mehr in der Hauptliste, Trophäen werden weiter geprüft
+    'archived_at': '',
 }
 
 
@@ -47,6 +50,7 @@ def make_game(result, hyped=False, manual_tba=False):
     return normalize_game({
         'name': result.get('name', ''),
         'release_date': release_date,
+        'release_window': result.get('release_window', ''),
         'manual_tba': manual_tba,
         'last_known_date': release_date if manual_tba else '',
         'platforms': result.get('platforms', ''),
@@ -96,7 +100,23 @@ def days_between(game1, game2):
 
 
 def is_tba(game):
-    return game.get('manual_tba', False) or not game.get('release_date')
+    """Kein genaues Datum: von Hand als Platzhalter markiert, gar kein Datum oder nur Jahr/Quartal/Monat bekannt."""
+    return bool(game.get('manual_tba') or not game.get('release_date') or game.get('release_window'))
+
+
+def release_year(game):
+    """Jahr für die Jahres-Ansicht (aus Datum, Zeitraum oder Platzhalter) – None, wenn unbekannt."""
+    match = re.search(r'(\d{4})', game.get('release_window') or '')
+    if match:
+        return int(match.group(1))
+    parsed = parse_date(game.get('release_date') or game.get('last_known_date'))
+    return parsed.year if parsed else None
+
+
+def sort_key_archive(game):
+    """Archiv: zuletzt erschienene zuerst (für sorted(..., reverse=True))."""
+    parsed = parse_date(game.get('release_date'))
+    return parsed.strftime('%Y-%m-%d') if parsed else '0000-00-00'
 
 
 def has_achievements(game):
@@ -160,7 +180,7 @@ def short_platform(name):
 
 def sort_key_dated(game):
     parsed = parse_date(game.get('release_date'))
-    return parsed.strftime('%Y-%m-%d') if parsed and not game.get('manual_tba') else '9999-12-31'
+    return parsed.strftime('%Y-%m-%d') if parsed and not is_tba(game) else '9999-12-31'
 
 
 def sort_key_tba(game):

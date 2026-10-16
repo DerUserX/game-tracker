@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 
 from . import config, igdb
-from .models import days_until, format_date_european, title
+from .models import days_until, format_date_european, is_tba, title
 
 log = logging.getLogger(__name__)
 
@@ -68,6 +68,7 @@ class Updater:
         time.sleep(60)
         while True:
             try:
+                self.store.backup_daily()
                 if self._due():
                     self.run_full_update()
             except Exception:
@@ -107,6 +108,8 @@ class Updater:
         messages = []
 
         for game in self.store.snapshot():
+            if game.get('archived'):
+                continue   # erschienen und archiviert – nur noch die Trophäen werden geprüft
             if game.get('igdb_id'):
                 result = self.igdb.by_id(game['igdb_id'])
             else:
@@ -152,19 +155,37 @@ class Updater:
             fields['igdb_id'] = result['igdb_id']
 
         old_date = game.get('release_date', '')
+        old_window = game.get('release_window', '')
         new_date = format_date_european(result.get('release_date', ''))
-        if new_date and new_date != old_date:
-            if old_date:
-                message = f"📅 {name}: {new_date} (vorher: {old_date})"
-                self.store.add_notification("📅 Neues Release-Datum",
-                                            f"{name} - Neues Datum: {new_date} (vorher: {old_date})",
-                                            "date_change", name)
-            else:
-                message = f"📅 {name}: {new_date} (neu!)"
-                self.store.add_notification("📅 Neues Release-Datum",
-                                            f"{name} - Erstes Datum: {new_date}", "date_change", name)
-            fields.update(release_date=new_date, last_known_date=new_date, manual_tba=False,
+        new_window = result.get('release_window', '')
+        if not new_date:
+            return fields, message
+
+        date_changed = new_date != old_date
+        window_changed = new_window != old_window
+        old_label, new_label = old_window or old_date, new_window or new_date
+
+        if date_changed or window_changed:
+            # Erstes Mal mit Zeitraum-Erkennung: gleicher Platzhalter, jetzt nur als „2027“/„Q4 2027“ erkannt → still
+            first_detection = not old_window and new_window and not date_changed
+            if not first_detection and old_label != new_label:
+                if not old_label:
+                    head, text = "📅 Neues Release-Datum", f"{name} - Erster Termin: {new_label}"
+                    message = f"📅 {name}: {new_label} (neu!)"
+                elif old_window and not new_window:
+                    head, text = "📅 Genaues Datum", f"{name} - Genaues Datum: {new_date} (vorher: {old_window})"
+                    message = f"📅 {name}: {new_date} (vorher: {old_window})"
+                elif new_window and old_window:
+                    head, text = "📆 Zeitraum präzisiert", f"{name} - {new_window} (vorher: {old_window})"
+                    message = f"📆 {name}: {new_window} (vorher: {old_window})"
+                else:
+                    head, text = "📅 Neues Release-Datum", f"{name} - Neues Datum: {new_label} (vorher: {old_label})"
+                    message = f"📅 {name}: {new_label} (vorher: {old_label})"
+                self.store.add_notification(head, text, "date_change", name)
+            fields.update(release_date=new_date, release_window=new_window, last_known_date=new_date,
                           rating=result.get('rating', game.get('rating', 0)))
+            if date_changed:
+                fields['manual_tba'] = False
         return fields, message
 
     # --- Warteliste ---
@@ -188,7 +209,7 @@ class Updater:
         messages = []
 
         for game in self.store.snapshot():
-            if not game.get('release_date') or game.get('manual_tba'):
+            if is_tba(game) or game.get('archived'):
                 continue
             days = days_until(game['release_date'])
             if days not in (7, 0):

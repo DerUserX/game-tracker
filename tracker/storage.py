@@ -2,8 +2,9 @@
 import json
 import logging
 import os
+import shutil
 import threading
-from datetime import datetime
+from datetime import date, datetime
 
 from . import paths
 from .models import normalize_game
@@ -11,6 +12,7 @@ from .models import normalize_game
 log = logging.getLogger(__name__)
 
 MAX_NOTIFICATIONS = 50
+BACKUP_DAYS = 7
 
 
 def _read_json(path, default):
@@ -46,6 +48,7 @@ class Store:
         self.config = _read_json(paths.CONFIG_FILE, {'last_update': ''})
         self.waitlist = _read_json(paths.WAITLIST_FILE, [])
         self.notifications = _read_json(paths.NOTIFICATIONS_FILE, [])
+        self.backup_daily()
 
     def subscribe(self, callback):
         self.listeners.append(callback)
@@ -92,6 +95,28 @@ class Store:
         with self.lock:
             self.games = [g for g in self.games if g.get('uid') != uid]
         self.save_games()
+
+    def set_archived(self, uid, archived):
+        self.update_game(uid, archived=archived, archived_at=datetime.now().isoformat() if archived else '')
+
+    # --- Sicherungen ---
+    def backup_daily(self):
+        """Einmal pro Tag eine Kopie der Daten nach backups/JJJJ-MM-TT/; nur die letzten 7 Tage behalten."""
+        try:
+            root = os.path.join(paths.DATA_DIR, 'backups')
+            target = os.path.join(root, date.today().isoformat())
+            if not os.path.isdir(target):
+                os.makedirs(target)
+                with self.lock:
+                    for path in (paths.GAMES_FILE, paths.WAITLIST_FILE, paths.NOTIFICATIONS_FILE):
+                        if os.path.exists(path):
+                            shutil.copy2(path, target)
+                log.info("Sicherung angelegt: %s", target)
+            days = sorted(d for d in os.listdir(root) if os.path.isdir(os.path.join(root, d)))
+            for old in days[:-BACKUP_DAYS]:
+                shutil.rmtree(os.path.join(root, old), ignore_errors=True)
+        except OSError as e:
+            log.warning("Sicherung fehlgeschlagen: %s", e)
 
     def has_igdb_id(self, igdb_id):
         igdb_id = str(igdb_id)

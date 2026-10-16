@@ -36,6 +36,20 @@ https://demuhb.github.io/game-tracker/ – wird aus dem Ordner `docs/` per GitHu
 und ist etwa 1 Minute nach jedem Push aktuell.
 Die Spieleliste kommt aus dem Gist, das die Desktop-App bei jeder Änderung aktualisiert.
 
+## Ansichten
+
+- **📅 Mit Datum / ⏳ Ohne Datum / 🗄 Archiv** – drei Tabs in der Spieleliste und in der PWA.
+- **Ohne Datum:** Kennt IGDB nur ein Jahr, Quartal oder einen Monat, steht dort „📆 2027“ bzw. „📆 Q4 2027“ statt
+  eines Platzhalter-Datums. Wird der Termin genauer, kommt eine Benachrichtigung.
+- **Archiv:** Erschienene Spiele über das „🗄 Archivieren“-Abzeichen auf der Karte oder den Knopf im Bearbeiten-Dialog
+  archivieren. Archivierte Spiele bekommen keine IGDB-Updates mehr, ihre Trophäen werden aber weiter geprüft (DLC).
+- **Jahres-Ansicht:** Der kleine Schalter „Jahre“ unten rechts (PWA: „nach Jahren“) trennt die Listen nach Jahren.
+
+## Sicherungen
+
+Die App legt täglich eine Kopie von `games.json`, `waitlist.json` und `notifications.json` unter `backups\JJJJ-MM-TT\`
+an und behält die letzten 7 Tage. Zum Wiederherstellen die App beenden und die Dateien zurückkopieren.
+
 ## Trophäen-Benachrichtigungen
 
 Einmal täglich sucht die App jedes Spiel mit PlayStation, PC oder Xbox auf Exophase – zuerst die

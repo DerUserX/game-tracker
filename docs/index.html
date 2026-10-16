@@ -35,21 +35,30 @@
   .reload.spin { animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .tabs { position: relative; display: grid; grid-template-columns: 1fr 1fr; margin: 12px 0 0;
+  .tabs { position: relative; display: grid; grid-template-columns: 1fr 1fr 1fr; margin: 12px 0 0;
           background: var(--bg); border-radius: 10px; padding: 3px; }
   .tabs button { position: relative; z-index: 1; border: 0; background: none; color: var(--muted);
-                 font: inherit; font-weight: 700; font-size: .85rem; padding: 9px 4px; cursor: pointer;
+                 font: inherit; font-weight: 700; font-size: .78rem; padding: 9px 2px; cursor: pointer;
+                 white-space: nowrap;
                  transition: color .2s; }
   .tabs button.active { color: #fff; }
-  .tabs .indicator { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px);
+  .tabs .indicator { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(33.333% - 2px);
                      background: var(--accent); border-radius: 8px; transition: transform .3s ease; }
   .tabs-wrap { padding-bottom: 10px; }
 
   .viewport { overflow: hidden; }
   /* align-items: flex-start → jede Seite nur so hoch wie ihr Inhalt; die Höhe des Viewports
      folgt per fitHeight() der aktiven Seite (sonst Leerraum unter der kürzeren Liste) */
-  .track { display: flex; align-items: flex-start; width: 200%; transition: transform .3s ease; }
-  .page { width: 50%; flex-shrink: 0; padding: 10px 12px 24px; }
+  .track { display: flex; align-items: flex-start; width: 300%; transition: transform .3s ease; }
+  .page { width: 33.3333%; flex-shrink: 0; padding: 10px 12px 24px; }
+  .year { display: flex; align-items: center; gap: 10px; margin: 14px 4px 4px; }
+  .year:first-child { margin-top: 2px; }
+  .year .label { font-weight: 700; font-size: .95rem; }
+  .year .line { flex: 1; height: 1px; background: var(--border); }
+  .year .count { font-size: .7rem; color: var(--subtle); }
+  .view-toggle { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: 8px;
+                 font-size: .72rem; color: var(--muted); }
+  .view-toggle input { accent-color: var(--accent); margin: 0; }
 
   .game { display: flex; gap: 12px; background: var(--card); border-radius: 12px; padding: 10px;
           margin: 8px 0; border: 2px solid transparent; }
@@ -97,7 +106,9 @@
       <div class="indicator" id="indicator"></div>
       <button id="tab0" class="active" role="tab">📅 Mit Datum</button>
       <button id="tab1" role="tab">⏳ Ohne Datum</button>
+      <button id="tab2" role="tab">🗄 Archiv</button>
     </div>
+    <label class="view-toggle"><input type="checkbox" id="byYear"> nach Jahren</label>
   </div>
 </header>
 
@@ -105,6 +116,7 @@
   <div class="track" id="track">
     <div class="page" id="page0"></div>
     <div class="page" id="page1"></div>
+    <div class="page" id="page2"></div>
   </div>
 </div>
 <div class="footer" id="footer"></div>
@@ -115,7 +127,10 @@ const GIST_RAW_URL = "https://gist.githubusercontent.com/demuHB/6223c6e0ef9f2d6f
 const SOURCE = new URLSearchParams(location.search).get('src') || GIST_RAW_URL;
 const COVER_URL = id => `https://images.igdb.com/igdb/image/upload/t_cover_big/${id}.jpg`;
 
+const PAGES = 3;
 let games = [], page = 0;
+let byYear = false;
+try { byYear = localStorage.getItem('byYear') === '1'; } catch (e) {}
 const $ = id => document.getElementById(id);
 
 // ---------- Helfer ----------
@@ -143,7 +158,14 @@ function effectiveDate(g) {
   }
   return parseDate(g.last_known_date);
 }
-const isTba = g => g.manual_tba || (!g.release_date && !g.release_window);
+// ohne genaues Datum: von Hand markiert, gar kein Datum oder nur Jahr/Quartal/Monat bekannt
+const isTba = g => !!(g.manual_tba || !g.release_date || g.release_window);
+function releaseYear(g) {
+  const m = (g.release_window || '').match(/\d{4}/);
+  if (m) return +m[0];
+  const d = parseDate(g.release_date) || parseDate(g.last_known_date);
+  return d ? d.getFullYear() : null;
+}
 const sortByDate = (a, b) => (effectiveDate(a) || new Date(9999,0)) - (effectiveDate(b) || new Date(9999,0));
 const weeks = d => `${Math.round(d / 7 * 2) / 2} Wochen`;
 
@@ -167,6 +189,7 @@ function platformList(str) {
 
 function countdown(g) {
   // zweiter Wert = Kontur-Klasse ('' = keine Kontur)
+  if (g.release_window && !g.archived) return [`📆 ${g.release_window}`, ''];
   if (g.manual_tba) return [g.last_known_date ? `Platzhalter ignoriert: ${g.last_known_date}` : 'Datum unbekannt', ''];
   if (g.release_date) {
     const d = daysUntil(g.release_date);
@@ -217,33 +240,53 @@ function emptyHtml(text) {
   return `<div class="empty"><div class="icon">⏳</div><div>${text}</div></div>`;
 }
 
-function render() {
-  const dated = games.filter(g => !isTba(g)).sort(sortByDate);
-  const tba = games.filter(isTba).sort(sortByDate);
+function yearHtml(year, count) {
+  return `<div class="year"><span class="label">${year || 'Ohne Jahr'}</span><span class="line"></span>` +
+         `<span class="count">${count} ${count === 1 ? 'Spiel' : 'Spiele'}</span></div>`;
+}
 
-  $('sub').textContent = `${games.length} Spiele · ${games.filter(g => g.hyped).length} gehypt`;
-  $('tab0').textContent = `📅 Mit Datum (${dated.length})`;
-  $('tab1').textContent = `⏳ Ohne Datum (${tba.length})`;
-
+// Liste mit Tagesabständen; in der Jahres-Ansicht stattdessen Überschriften an Jahresgrenzen
+function listHtml(list, withGaps) {
+  const years = list.map(releaseYear);
+  const perYear = years.reduce((m, y) => (m[y] = (m[y] || 0) + 1, m), {});
   let html = '';
-  dated.forEach((g, i) => {
-    if (i > 0) {
-      const prev = dated[i - 1], d1 = effectiveDate(prev), d2 = effectiveDate(g);
+  list.forEach((g, i) => {
+    if (byYear && (i === 0 || years[i] !== years[i - 1])) {
+      html += yearHtml(years[i], perYear[years[i]]);
+    } else if (withGaps && i > 0) {
+      const d1 = effectiveDate(list[i - 1]), d2 = effectiveDate(g);
       if (d1 && d2) {
         const gap = Math.abs(Math.round((d2 - d1) / 86400000));
-        if (gap > 0) html += gapHtml(gap, (!prev.release_date && prev.release_window) || (!g.release_date && g.release_window));
+        if (gap > 0) html += gapHtml(gap, false);
       }
     }
     html += gameHtml(g);
   });
-  $('page0').innerHTML = html || emptyHtml('Keine Spiele mit Datum');
-  $('page1').innerHTML = tba.map(gameHtml).join('') || emptyHtml('Keine Spiele ohne Datum');
+  return html;
+}
+
+function render() {
+  const active = games.filter(g => !g.archived);
+  const dated = active.filter(g => !isTba(g)).sort(sortByDate);
+  const tba = active.filter(isTba).sort(sortByDate);
+  const archive = games.filter(g => g.archived).sort((a, b) => sortByDate(b, a));
+
+  const archivedText = archive.length ? ` · ${archive.length} im Archiv` : '';
+  $('sub').textContent = `${active.length} Spiele · ${active.filter(g => g.hyped).length} gehypt${archivedText}`;
+  $('tab0').textContent = `📅 Mit Datum (${dated.length})`;
+  $('tab1').textContent = `⏳ Ohne Datum (${tba.length})`;
+  $('tab2').textContent = `🗄 Archiv (${archive.length})`;
+
+  $('page0').innerHTML = listHtml(dated, true) || emptyHtml('Keine Spiele mit Datum');
+  $('page1').innerHTML = listHtml(tba, false) || emptyHtml('Keine Spiele ohne Datum');
+  $('page2').innerHTML = listHtml(archive, true) || emptyHtml('Archiv ist leer');
   fitHeight();
 }
 
 // Viewport genau so hoch wie die aktive Seite (both=true: beim Wischen beide Seiten sichtbar lassen)
 function fitHeight(both) {
-  const h = both ? Math.max($('page0').offsetHeight, $('page1').offsetHeight) : $('page' + page).offsetHeight;
+  const heights = [...Array(PAGES).keys()].map(i => $('page' + i).offsetHeight);
+  const h = both ? Math.max(...heights) : heights[page];
   $('viewport').style.height = h + 'px';
 }
 window.addEventListener('resize', () => fitHeight());
@@ -251,10 +294,9 @@ window.addEventListener('resize', () => fitHeight());
 function show(p) {
   const changed = p !== page;
   page = p;
-  $('tab0').classList.toggle('active', p === 0);
-  $('tab1').classList.toggle('active', p === 1);
+  for (let i = 0; i < PAGES; i++) $('tab' + i).classList.toggle('active', p === i);
   $('indicator').style.transform = `translateX(${p * 100}%)`;
-  $('track').style.transform = `translateX(-${p * 50}%)`;
+  $('track').style.transform = `translateX(-${p * 100 / PAGES}%)`;
   fitHeight();
   if (changed) window.scrollTo({ top: 0 });   // nur beim Seitenwechsel nach oben, nicht beim Zurückfedern
 }
@@ -280,8 +322,13 @@ function load() {
     .finally(() => $('reload').classList.remove('spin'));
 }
 
-$('tab0').onclick = () => show(0);
-$('tab1').onclick = () => show(1);
+for (let i = 0; i < PAGES; i++) $('tab' + i).onclick = () => show(i);
+$('byYear').checked = byYear;
+$('byYear').onchange = e => {
+  byYear = e.target.checked;
+  try { localStorage.setItem('byYear', byYear ? '1' : '0'); } catch (err) {}
+  render();
+};
 $('reload').onclick = load;
 load();
 
@@ -308,11 +355,12 @@ document.addEventListener('touchmove', e => {
     if (horizontal) fitHeight(true);   // während des Wischens die andere Seite nicht abschneiden
   }
   if (!horizontal) return;
-  let offset = -page * 50 + (dx / window.innerWidth) * 50;
+  const step = 100 / PAGES, last = -(PAGES - 1) * step;      // eine Seite = 1/PAGES der Track-Breite
+  let offset = -page * step + (dx / window.innerWidth) * step;
   if (offset > 0) offset *= 0.3;
-  if (offset < -50) offset = -50 + (offset + 50) * 0.3;
+  if (offset < last) offset = last + (offset - last) * 0.3;
   track.style.transform = `translateX(${offset}%)`;
-  indicator.style.transform = `translateX(${Math.min(100, Math.max(0, -offset * 2))}%)`;
+  indicator.style.transform = `translateX(${Math.min((PAGES - 1) * 100, Math.max(0, -offset / step * 100))}%)`;
 }, { passive: true });
 
 document.addEventListener('touchend', e => {
@@ -323,8 +371,8 @@ document.addEventListener('touchend', e => {
   indicator.style.transition = 'transform .3s ease';
   if (!horizontal) return;   // normales Hoch-/Runterscrollen: nichts anfassen
   if (Math.abs(dx) > window.innerWidth * 0.15) {
-    if (dx < 0 && page === 0) return show(1);
-    if (dx > 0 && page === 1) return show(0);
+    if (dx < 0 && page < PAGES - 1) return show(page + 1);
+    if (dx > 0 && page > 0) return show(page - 1);
   }
   show(page);   // zurückfedern auf die aktuelle Seite
 }, { passive: true });

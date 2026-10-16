@@ -25,3 +25,6 @@ __pycache__/
 
 # Lokale Werkzeug-/Testdateien
 .claude/
+
+# Lokale Sicherungen
+backups/

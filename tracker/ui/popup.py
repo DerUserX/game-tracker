@@ -13,7 +13,7 @@ from datetime import date, datetime
 import customtkinter as ctk
 
 from .. import config
-from ..models import is_tba, sort_key_dated, sort_key_tba
+from ..models import is_tba, sort_key_archive, sort_key_dated, sort_key_tba
 from . import theme
 from .gamelist import GameList
 from .widgets import monitor_at_cursor, sync_scaling
@@ -38,9 +38,10 @@ class Popup(ctk.CTkToplevel):
         self._build_header()
         self._build_tabs()
         self._build_footer()
-        self.list = GameList(self.shell, app, on_open=self._open_game, on_link=self._open_link)
+        self.list = GameList(self.shell, app, on_open=self._open_game, on_link=self._open_link,
+                             on_archive=self._archive)
         self.list.pack(fill='both', expand=True)
-        self._data = ([], [])
+        self._data = ([], [], [])
         self._signature = None
         self.closed_at = 0.0
         self.render()
@@ -162,6 +163,12 @@ class Popup(ctk.CTkToplevel):
         foot.pack(fill='x', side='bottom')
         self.footer_label = ctk.CTkLabel(foot, text="", font=theme.TINY, text_color=theme.MUTED)
         self.footer_label.pack(side='left', padx=14, pady=6)
+        # Unauffälliger Schalter für die Jahres-Ansicht (Zustand in config.json)
+        self.by_year = ctk.BooleanVar(value=bool(self.app.store.config.get('view_by_year')))
+        ctk.CTkSwitch(foot, text="Jahre", variable=self.by_year, command=self._toggle_years, font=theme.TINY,
+                      text_color=theme.MUTED, switch_width=26, switch_height=13, progress_color=theme.ACCENT,
+                      button_color=theme.MUTED, button_hover_color=theme.TEXT, fg_color=theme.BORDER, width=60
+                      ).pack(side='right', padx=(4, 12))
         self.waitlist_link = ctk.CTkLabel(foot, text="", font=theme.font(10, 'bold'), text_color=theme.ACCENT,
                                           cursor='hand2')
         self.waitlist_link.bind('<Button-1>', lambda e: self.app.open_waitlist(from_popup=True))
@@ -170,11 +177,16 @@ class Popup(ctk.CTkToplevel):
     def render(self):
         store = self.app.store
         games = store.snapshot()
-        dated = sorted((g for g in games if not is_tba(g)), key=sort_key_dated)
-        tba = sorted((g for g in games if is_tba(g)), key=sort_key_tba)
+        active = [g for g in games if not g.get('archived')]
+        dated = sorted((g for g in active if not is_tba(g)), key=sort_key_dated)
+        tba = sorted((g for g in active if is_tba(g)), key=sort_key_tba)
+        archive = sorted((g for g in games if g.get('archived')), key=sort_key_archive, reverse=True)
 
-        self.subtitle.configure(text=f"{len(games)} Spiele · {sum(1 for g in games if g.get('hyped'))} gehypt")
-        labels = [f"📅  Mit Datum ({len(dated)})", f"⏳  Ohne Datum ({len(tba)})"]
+        subtitle = f"{len(active)} Spiele · {sum(1 for g in active if g.get('hyped'))} gehypt"
+        if archive:
+            subtitle += f" · {len(archive)} im Archiv"
+        self.subtitle.configure(text=subtitle)
+        labels = [f"📅 Mit Datum ({len(dated)})", f"⏳ Ohne Datum ({len(tba)})", f"🗄 Archiv ({len(archive)})"]
         self.tabs.configure(values=labels)
         self.tabs.set(labels[self.page])
 
@@ -206,22 +218,31 @@ class Popup(ctk.CTkToplevel):
         self.refresh_btn.configure(state='disabled' if self.app.updater.running else 'normal')
 
         # Kartenliste nur bei echten Datenänderungen neu bauen
-        signature = json.dumps(games, sort_keys=True) + date.today().isoformat()
+        signature = json.dumps(games, sort_keys=True) + date.today().isoformat() + str(self.by_year.get())
         if signature != self._signature:
             self._signature = signature
-            self._data = (dated, tba)
+            self._data = (dated, tba, archive)
             self._show_page()
 
     def _show_page(self):
         games = self._data[self.page]
-        self.list.set_games(games, with_gaps=self.page == 0,
-                            empty_text="Keine Spiele mit Datum" if self.page == 0 else "Keine Spiele ohne Datum")
+        empty = ("Keine Spiele mit Datum", "Keine Spiele ohne Datum", "Archiv ist leer")[self.page]
+        self.list.set_games(games, with_gaps=self.page != 1, empty_text=empty, by_year=self.by_year.get())
 
     def _on_tab(self, value):
-        new_page = 0 if value.startswith("📅") else 1
+        new_page = {"📅": 0, "⏳": 1, "🗄": 2}.get(value[:1], 0)
         if new_page != self.page:
             self.page = new_page
             self._show_page()
+
+    def _toggle_years(self):
+        self.app.store.config['view_by_year'] = bool(self.by_year.get())
+        self.app.store.save_config()
+        self._signature = None
+        self.render()
+
+    def _archive(self, uid):
+        self.app.store.set_archived(uid, True)
 
     # ------------------------------------------------------------- Aktionen
     def _open_game(self, uid):

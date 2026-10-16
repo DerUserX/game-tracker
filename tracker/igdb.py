@@ -21,7 +21,10 @@ class NetworkError(Exception):
     """IGDB nicht erreichbar – ein Update-Durchlauf sollte dann abbrechen statt jedes Spiel einzeln zu versuchen."""
 
 
-FIELDS = 'fields name, first_release_date, platforms.name, rating, cover.image_id, total_rating_count, hypes;'
+FIELDS = ('fields name, first_release_date, platforms.name, rating, cover.image_id, total_rating_count, hypes, '
+          'release_dates.date, release_dates.date_format;')
+MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober',
+          'November', 'Dezember']
 
 
 class IGDBClient:
@@ -111,6 +114,7 @@ class IGDBClient:
         return {
             'name': game.get('name', 'Unbekannt'),
             'release_date': release_date,
+            'release_window': _release_window(game),
             'platforms': platforms,
             'rating': rating,
             'igdb_id': str(game.get('id', '')),
@@ -183,6 +187,33 @@ def search_variations(name):
         if v and v not in unique:
             unique.append(v)
     return unique
+
+
+def _release_window(game):
+    """Genauigkeit des frühesten Termins: '' bei Tagesdatum, sonst „2027“, „Q2 2027“, „März 2027“.
+
+    IGDB liefert für „irgendwann 2027“ ein Platzhalter-Datum (31.12.2027); die echte Genauigkeit steht in
+    release_dates.date_format (0 Tag, 1 Monat, 2 Jahr, 3–6 Quartal 1–4, 7 TBD).
+    """
+    first = game.get('first_release_date')
+    if not first:
+        return ''
+    entries = [r for r in game.get('release_dates') or [] if r.get('date') == first] or game.get('release_dates') or []
+    formats = {r.get('date_format') for r in entries if r.get('date_format') is not None}
+    if not formats or 0 in formats:
+        return ''          # mindestens eine Plattform hat ein genaues Datum
+    fmt = min(formats)     # genaueste Angabe gewinnt
+    try:
+        when = datetime.fromtimestamp(first)
+    except (OSError, ValueError):
+        return ''
+    if fmt == 1:
+        return f"{MONTHS[when.month - 1]} {when.year}"
+    if fmt == 2:
+        return str(when.year)
+    if 3 <= fmt <= 6:
+        return f"Q{fmt - 2} {when.year}"
+    return ''
 
 
 def _escape(text):
